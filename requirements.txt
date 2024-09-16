@@ -1,0 +1,6 @@
+pydantic
+openai
+instructor
+futures
+pandas
+numpy
