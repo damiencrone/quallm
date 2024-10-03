@@ -1,12 +1,12 @@
 # quallm
 
-quallm is a Python library designed to simplify and streamline LLM-assisted content analysis tasks. It provides a flexible framework for defining, executing, and analyzing various content analysis (and similar) tasks using language models. quallm is built to work seamlessly with both local models through Ollama and cloud-hosted models (e.g., those provided by Together, Groq, OpenAI, and other services), providing the flexibility to choose the most suitable option for a given task.
+quallm is a Python library designed to simplify and streamline LLM-assisted content analysis tasks. It provides a flexible framework for defining, executing, and analyzing various content analysis (and similar) tasks using language models. quallm is built to work seamlessly with both local (i.e., on-device) models through [Ollama](https://ollama.com) and cloud-hosted models (e.g., those provided by Together, Groq, OpenAI, and other services), providing the flexibility to choose the most suitable option for a given task.
 
 Key features of quallm include:
 
 - A modular design that separates tasks, data handling, inference, and output handling
-- Output validation using Instructor
-- Support for defining arbitrary structured outputs using Pydantic models
+- Output validation using [Instructor](https://python.useinstructor.com)
+- Support for defining arbitrary structured outputs using [Pydantic](https://docs.pydantic.dev/latest/) models
 - Built-in, customizable tasks for common analyses like single-labeled classification
 - Support for multiple "raters" (different language model instances) for the same task
 - Options for parallel processing to improve performance on larger datasets
@@ -31,13 +31,23 @@ pip install git+https://github.com/damiencrone/quallm.git
 
 These instructions will create a new conda environment with Python 3.10 and install quallm with all its dependencies.
 
+**Note**: to use local LLMs, you will need to install [Ollama](https://ollama.com), and will need to have already downloaded whatever model(s) you intend to use. After installing Ollama, this can simply be achieved with the following bash command (which would download the [Phi-3.5-mini](https://ollama.com/library/phi3.5) model used in the first demo below):
+
+```bash
+ollama pull phi3.5
+```
+
+If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. For further details on setting up different LLMs with different providers, refer to the [Instructor](https://python.useinstructor.com) documentation.
+
 ## Usage
+
+quallm revolves around a few simple elements. The most important of these is the "task", which is essentially the combination of (1) an output schema (a Pydantic model) defining the structure of the response the LLM will generate, and (2) a prompt template providing instructions for the LLM. Once a task is defined, all one needs is one or more LLMs (or "raters") to perform the task, and a dataset, which contains each individual observation (e..g, a survey response, document, etc.) which the task will be performed on.
 
 Here are some basic examples of how to use quallm:
 
 ### Using a pre-existing task
 
-Simple tasks such as single-label classification or sentiment analysis can be performed with pre-existing tasks. For example:
+Simple tasks such as single-label classification or sentiment analysis can be performed with pre-existing tasks[^1]. In the example below, we use a relatively small local LLM (Phi-3.5), which will likely work on most consumer devices. In this task, we ask the LLM to classify three texts, using a pre-configured sentiment analysis task, which returns a sentiment classification (one of five categories), along with an explanation and confidence rating.
 
 ```python
 from quallm import LLMClient, Dataset, Predictor
@@ -65,9 +75,11 @@ print(expanded_results)
 # 2  The text expresses a strong negative emotion t...          95  negative
 ```
 
+[^1]: Although pre-defined tasks *do* come with pre-written prompt templates, users are advised to tailor prompts to their specific use cases, as the default prompts are unlikely to be optimal for a given combination of task, LLM, and dataset.
+
 ### Defining a new task
 
-Aribtrary tasks can also be defined using a TaskConfig with (at minimum) a Pydantic model, and system and user prompt template.
+Aribtrary tasks can also be defined using a `TaskConfig` with (at minimum) a Pydantic model, and system and user prompt template. In the example below, we define a trivial task: The response model (i.e., the thing the LLM is tasked with generating) is a list of strings on a given topic (the `ListResponse` Pydantic model). The prompt template (in the definition of `task_config`) is a barebones template with a placeholder for the topic (which is the datapoint or observation which is piped into the prompt template at inference time). In this case, the "data" is a single observation: "ethical precepts". As instructed, the LLM returns a list of ethical precepts.
 
 ```python
 from pydantic import BaseModel, Field
@@ -99,7 +111,9 @@ results
 
 ### Using multiple language models, parallelization and arbitrary label sets
 
-This example demonstrates using multiple raters, parallelizing predictions, and defining custom label sets:
+Many use cases for quallm will likely entail labelling tasks in which labels are predicted for a large number of observations. As such, this example provides a barebones demonstration of how one might approach such a use case, using multiple raters, parallelizing predictions, and defining custom label sets (using the `LabelSet` class, which can be passed to a generic `SingleLabelCategorizationTask`, or if preferred, an entirely user-defined task).
+
+In this toy example, we define a categorization task where two local LLMs (Phi-3.5 and Llama-3.1) are tasked with categorizing a list of four objects as either an animal, a vehicle, or other:
 
 ```python
 from quallm import LLMClient, Predictor
