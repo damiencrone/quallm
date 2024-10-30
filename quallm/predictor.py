@@ -65,19 +65,27 @@ class Predictor:
 
         This method processes the input data, applies the content analysis task using
         the specified language models, and returns the predictions.
+        If no existing predictions are provided, performs predictions for all observations. 
+        If an existing Prediction object is provided via the predictions argument, only 
+        performs predictions for missing (None) values in that object, preserving all 
+        existing predictions.
 
         Args:
             data (Union[str, Dict[str, str], List[str], pd.Series, np.ndarray, List[Dict[str, str]]):
                 The input data to be analyzed. Can be in various formats, which will be
                 standardized internally.
             predictions (Prediction, optional): An existing Prediction object to update.
-                If None, a new Prediction object will be created. Defaults to None.
+                If provided, only missing (None) predictions will be made, preserving
+                existing ones. If None, a new Prediction object will be created and
+                all predictions will be made. Defaults to None.
             max_workers (int, optional): The maximum number of worker threads to use
                 for parallel processing. If 1, processing is done sequentially.
                 Defaults to 1.
 
         Returns:
             Prediction: A Prediction object containing the results of the content analysis.
+                If predictions argument was provided, this will be the same object with
+                missing values filled in.
 
         Raises:
             ValueError: If the input data format is unsupported or if there's a mismatch
