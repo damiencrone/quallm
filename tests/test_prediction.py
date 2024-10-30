@@ -201,3 +201,64 @@ def test_prediction_creation_list_generation():
     assert list_prediction.task == list_generation_task
     assert list_prediction.n_obs == 1
     assert list_prediction.n_raters == 1
+
+
+
+# Tests of missingness handling
+class Person(BaseModel):
+    name: str
+    age: int
+
+@pytest.fixture
+def person_prediction():
+    
+    task_config = TaskConfig(
+        response_model=Person,
+        system_template="Generate a person object given a string of text",
+        user_template="Text: {text}",
+        output_attribute="name"
+    )
+    
+    task = Task.from_config(task_config)
+    
+    # Create a prediction object with a missing response
+    prediction = Prediction.__new__(
+        Prediction,
+        task=task,
+        n_obs=3,
+        n_raters=2
+    )
+    
+    # Fill with test data
+    prediction[0,0] = None
+    prediction[0,1] = {'response': [Person(name='Steve', age=12)]}
+    prediction[1,0] = {'response': [Person(name='Stevie', age=13)]}
+    prediction[1,1] = {'response': [Person(name='Stevie', age=13)]}
+    prediction[2,0] = {'response': [Person(name='Steven', age=14)]}
+    prediction[2,1] = {'response': [Person(name='Steven', age=14)]}
+    
+    return prediction
+
+def test_get_with_missing_response_object(person_prediction):
+    result = person_prediction.get()
+    np.testing.assert_equal(
+        result,
+        np.array([[None, 'Steve'],
+                 ['Stevie', 'Stevie'],
+                 ['Steven', 'Steven']], dtype=object)
+    )
+
+def test_expand_with_missing_response_object(person_prediction):
+    expanded = person_prediction.expand()
+    
+    # Verify missingness is handled correctly
+    assert expanded.loc[0, 'name_r1'] is None
+    assert expanded.loc[0, 'name_r2'] == 'Steve'
+    assert expanded.loc[0, 'age_r1'] is None
+    assert expanded.loc[0, 'age_r2'] == 12
+    
+    # Check complete rows
+    assert expanded.loc[1, 'name_r1'] == 'Stevie'
+    assert expanded.loc[1, 'age_r1'] == 13
+    assert expanded.loc[2, 'name_r1'] == 'Steven'
+    assert expanded.loc[2, 'age_r1'] == 14

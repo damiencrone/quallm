@@ -34,6 +34,8 @@ class Prediction(np.ndarray):
     
     @staticmethod
     def _extract_value(item, attribute):
+        if item is None:
+            return None
         val = getattr(item['response'][0], attribute)
         if hasattr(val, 'value'):
             return val.value
@@ -79,8 +81,8 @@ class Prediction(np.ndarray):
             output_data = self[indices]
     
         # Determine if the attribute is a list-type or scalar
-        first_item = self._extract_value(self[0,0], attribute)
-        is_list_type = isinstance(first_item, list)
+        attr_type = self.task.response_model.model_fields[attribute].annotation
+        is_list_type = attr_type is list
         
         if isinstance(output_data, dict):
             # Single item case
