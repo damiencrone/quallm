@@ -121,5 +121,5 @@ class Predictor:
     
     def validate_existing_predictions(self, predictions: Prediction, standardized_data: Dataset):
         assert isinstance(predictions, Prediction), f"Received predictions object of type {type(predictions)}; predictions must be an instance of Prediction"
-        assert not np.any(predictions == None), "All predictions have already been made"
+        assert np.any(predictions == None), "All predictions have already been made"
         assert predictions.shape == (len(standardized_data), self.n_raters), f"Shape of predictions {predictions.shape} does not match number of observations and raters"
