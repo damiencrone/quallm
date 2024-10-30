@@ -96,6 +96,7 @@ class Predictor:
             predictions = Prediction.__new__(Prediction, task=self.task, n_obs=len(standardized_data), n_raters=self.n_raters)
         else:
             self.validate_existing_predictions(predictions, standardized_data)
+            print(f"Resuming predictions for {np.sum(predictions == None)} missing observation(s) out of {predictions.size} total observation(s).")
         # Prepare prediction tasks
         tasks = []
         for i, data_point in enumerate(standardized_data):
