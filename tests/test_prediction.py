@@ -6,7 +6,7 @@ from quallm.dataset import Dataset
 from quallm.predictor import Predictor
 from quallm.client import LLMClient
 
-DEFAULT_MODEL = "phi3.5"
+DEFAULT_MODEL = "llama3.1"
 
 llm = LLMClient(language_model=DEFAULT_MODEL)
 
@@ -193,15 +193,23 @@ LIST_GENERATOR_CONFIG = TaskConfig(
 )
 
 list_generation_task = Task.from_config(LIST_GENERATOR_CONFIG)
-predictor_list_generation = Predictor(raters=llm, task=list_generation_task)
-list_prediction = predictor_list_generation.predict("friuts")
+raters = [llm]
+predictor_list_generation = Predictor(raters=raters, task=list_generation_task)
+list_generation_data = ["friuts", "vegetables", "animals"]
+list_prediction = predictor_list_generation.predict(list_generation_data)
 
 def test_prediction_creation_list_generation():
     assert isinstance(list_prediction, Prediction)
     assert list_prediction.task == list_generation_task
-    assert list_prediction.n_obs == 1
+    assert list_prediction.n_obs == len(list_generation_data)
     assert list_prediction.n_raters == 1
-
+    
+def test_get_with_list_generation():
+    result = list_prediction.get()
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (len(list_generation_data),) 
+    assert isinstance(result[0], list)
+    assert all(isinstance(item, str) for item in result[0])
 
 
 # Tests of missingness handling
