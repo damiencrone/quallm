@@ -1,6 +1,7 @@
 
 from pydantic import BaseModel, Field, conint
 from enum import Enum
+import typing
 from typing import List, Dict, Union, TypeVar, Generic, Type
 
 from .prompt import Prompt
@@ -172,6 +173,21 @@ class Task():
             output_type=config.output_type,
             **merged_kwargs
         )
+
+    def is_attribute_list(self, attribute: str) -> bool:
+        """
+        Checks if a given attribute in the response model is a list type.
+        """
+        if attribute not in self.response_model.model_fields:
+            raise ValueError(f"Attribute '{attribute}' not found in the response model.")
+
+        annotation = self.response_model.model_fields[attribute].annotation
+        if hasattr(annotation, '__origin__'): # Check if it's a parameterized type
+            return annotation.__origin__ is list # Use "is" for identity comparison
+        elif hasattr(typing, 'List') and typing.List is list:
+            return issubclass(annotation, list)
+        else: # Fallback: treat as scalar if not a parameterized or typing.List
+            return False
 
 
 class LabelSet(str, Enum):

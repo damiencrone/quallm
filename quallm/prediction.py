@@ -1,4 +1,3 @@
-import typing
 import pandas as pd
 import numpy as np
 
@@ -81,13 +80,7 @@ class Prediction(np.ndarray):
             output_data = self[indices]
     
         # Determine if the attribute is a list-type or scalar
-        attr_type = self.task.response_model.model_fields[attribute].annotation
-        if hasattr(attr_type, '__origin__'):  # Check if it's a parameterized type
-            is_list_type = attr_type.__origin__ is list  # Use "is" for identity comparison
-        elif hasattr(typing, 'List') and typing.List is list:
-            is_list_type = issubclass(attr_type, list)
-        else:  # Fallback: treat as scalar if not a parameterized or typing.List
-            is_list_type = False
+        is_list_type = self.task.is_attribute_list(attribute)
         
         if isinstance(output_data, dict):
             # Single item case
