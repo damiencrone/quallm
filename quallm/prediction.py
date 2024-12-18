@@ -140,16 +140,29 @@ class Prediction(np.ndarray):
         """
         attributes = self.task.response_model.model_fields.keys()
         result_data = {}
+        data_is_dataframe = False
         
         # Perform some input validation
-        if data is not None and 'data' in attributes:
-            raise ValueError("Cannot prepend data because 'data' is already used in the response model.")
-        if explode is not None and explode not in attributes:
-            raise ValueError(f"Cannot explode on '{explode}' because it is not an attribute of the response model.")
+        if data is not None:
+            data_is_dataframe = isinstance(data, pd.DataFrame)
+            if not data_is_dataframe and 'data' in attributes:
+                raise ValueError("Cannot prepend data because 'data' is already used in the response model.")
+            if self.n_obs != len(data):
+                raise ValueError(f"Data length ({len(data)}) does not match number of observations ({self.n_obs}).")
+        if explode is not None:
+            if self.n_raters > 1:
+                raise NotImplementedError(f"Exploding list-like attributes is not (yet) supported for multiple raters. For now, try using pandas' explode method on the output instead.")
+            if explode not in attributes:
+                raise ValueError(f"Cannot explode on '{explode}' because it is not an attribute of the response model.")
+            if data_is_dataframe and explode in data.columns:
+                raise ValueError(f"Cannot explode on '{explode}' because it is already a column in the provided data.")
 
         # Prepend data (if provided)
         if data is not None:
-            result_data['data'] = data
+            if data_is_dataframe:
+                result_data = data.copy()
+            else:
+                result_data['data'] = data
         # TODO: Handle non-1D data properly (e.g., list of dicts, or pandas columns)
 
        # Append LLM responses
