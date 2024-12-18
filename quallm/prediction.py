@@ -113,7 +113,7 @@ class Prediction(np.ndarray):
         
         return result
     
-    def expand(self, suffix: list = None, data=None):
+    def expand(self, suffix: list = None, data=None, explode: str = None):
         """
         Convert the prediction array into a pandas DataFrame.
 
@@ -125,10 +125,13 @@ class Prediction(np.ndarray):
                                      If None, uses '_r1', '_r2', etc. Defaults to None.
             data (array-like, optional): Additional data to include in the DataFrame. 
                                          If provided, adds a 'data' column. Defaults to None.
+            explode (str, optional): List-like response model attribute to explode into multiple
+                                     rows. Defaults to None.
 
         Returns:
             pandas.DataFrame: A DataFrame containing expanded prediction data with one row per
-                              observation and one column per response model attribute (per rater).
+                              observation (unless explode argument provided) and one column per
+                              response model attribute (per rater).
 
         Note:
             The resulting DataFrame will have columns for each attribute in the response model,
@@ -137,10 +140,19 @@ class Prediction(np.ndarray):
         """
         attributes = self.task.response_model.model_fields.keys()
         result_data = {}
+        
+        # Perform some input validation
+        if data is not None and 'data' in attributes:
+            raise ValueError("Cannot prepend data because 'data' is already used in the response model.")
+        if explode is not None and explode not in attributes:
+            raise ValueError(f"Cannot explode on '{explode}' because it is not an attribute of the response model.")
 
+        # Prepend data (if provided)
         if data is not None:
             result_data['data'] = data
+        # TODO: Handle non-1D data properly (e.g., list of dicts, or pandas columns)
 
+       # Append LLM responses
         for attr in attributes:
             values = self.get(attr)
             if self.n_raters > 1:
@@ -154,8 +166,13 @@ class Prediction(np.ndarray):
                     result_data[column_name] = values[:, rater]
             else:
                 result_data[attr] = values.flatten()
-
-        return pd.DataFrame(result_data)
+        
+        result = pd.DataFrame(result_data)
+        
+        if explode is not None:
+            result = result.explode(explode)
+        
+        return result
 
     def code_reliability(self):
         # TODO (later): Compute reliability metrics based on the results when n_raters > 1
