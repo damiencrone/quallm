@@ -1,5 +1,6 @@
 
 from openai import OpenAI
+from pydantic import BaseModel
 import instructor
 
 DEFAULT_LANGUAGE_MODEL = "gemma2"
@@ -40,3 +41,16 @@ class LLMClient:
             max_retries=self.max_retries
         )
         return resp
+    
+    def test(self, question=None) -> str:
+        """Test the LLM client with a simple request"""
+        class TestResponse(BaseModel):
+            response: str
+        if question is None:
+            question = "Is a hot dog a sandwich, and if so, why?"
+        resp = self.request(
+            system_prompt="You are a helpful but opinionated assistant.",
+            user_prompt=f"Provide a definitive 10 word statement that answers the question: {question}",
+            response_model=TestResponse
+        )
+        return resp.response
