@@ -270,3 +270,68 @@ def test_expand_with_missing_response_object(person_prediction):
     assert expanded.loc[1, 'age_r1'] == 13
     assert expanded.loc[2, 'name_r1'] == 'Steven'
     assert expanded.loc[2, 'age_r1'] == 14
+    
+    
+# Tests of explode argument for expand method
+import json
+from pathlib import Path
+
+class StringList(BaseModel):
+    items: List[str] = Field(description="A list of items relating to a topic")
+
+class Item(BaseModel):
+    name: str = Field(description="The name of the item")
+    description: str = Field(description="A brief description of the item")
+
+class ItemList(BaseModel):
+    items: List[Item] = Field(description="A list of items relating to a topic")
+    
+# Helper function to load test data from JSON
+def load_test_data(filepath, response_model, task):
+    with open(filepath, 'r') as f:
+        data = json.load(f)
+
+    wrapped_predictions = []
+    for pred_data in data['input_data']['predictions']:
+        items = pred_data['items']
+        if response_model == StringList:
+            wrapped_items = response_model(items=items)
+        elif response_model == ItemList:
+            wrapped_items = response_model(items=[Item(**item) for item in items])
+        wrapped_predictions.append({'response': [wrapped_items]})
+
+    predictions = Prediction(task=task, n_obs=len(wrapped_predictions), n_raters=1)
+    for i, prediction_data in enumerate(wrapped_predictions):
+        predictions[i, 0] = prediction_data
+    data['input_data']['predictions'] = predictions
+    
+    expanded = pd.DataFrame.from_records(data['expected_output']['data'], index=data['expected_output']['index'])
+    expanded = expanded.replace({None: np.nan})
+    data['expected_output'] = expanded
+
+    return data
+
+# Define paths to test data files
+TEST_DATA_DIR = Path(__file__).parent / "test_data"
+EXPAND_TEST_CASE_1 = TEST_DATA_DIR / "expand_test_case_1.json"
+EXPAND_TEST_CASE_2 = TEST_DATA_DIR / "expand_test_case_2.json"
+
+@pytest.mark.parametrize("test_case, response_model", [
+    (EXPAND_TEST_CASE_1, StringList),
+    (EXPAND_TEST_CASE_2, ItemList),
+])
+def test_expand_with_explode(test_case, response_model):
+    
+    STRING_LIST_GENERATOR_CONFIG = TaskConfig(
+        response_model=response_model,
+        system_template="Generate a short list based on the topic provided. If no topic is provided, return an empty list.",
+        user_template="A list of: {topic}"
+    )
+
+    task = Task.from_config(STRING_LIST_GENERATOR_CONFIG)
+    data = load_test_data(test_case, response_model, task)
+    prediction = data['input_data']['predictions']
+
+    # Test expand with explode
+    expanded_explode = prediction.expand(explode='items')
+    pd.testing.assert_frame_equal(expanded_explode, data['expected_output'])

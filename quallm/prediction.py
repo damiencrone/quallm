@@ -114,28 +114,46 @@ class Prediction(np.ndarray):
         all attributes of the response model for each rater.
 
         Args:
-            suffix (list, optional): List of suffixes to use for each rater's columns. 
-                                     If None, uses '_r1', '_r2', etc. Defaults to None.
-            data (array-like, optional): Additional data to include in the DataFrame. 
-                                         If provided, adds a 'data' column. Defaults to None.
+            suffix (list, optional): List of suffixes to use for each rater's columns.
+                                    If None, uses '_r1', '_r2', etc. Defaults to None.
+            data (array-like or pandas.DataFrame, optional): Additional data to include in the DataFrame.
+                                        If an array-like object is provided, it's added as a single 'data' column.
+                                        If a pandas.DataFrame is provided, its columns are directly merged into the 
+                                        resulting DataFrame. Defaults to None.
             explode (str, optional): List-like response model attribute to explode into multiple
-                                     rows. Defaults to None.
+                                    rows. If the attribute is a list of Pydantic models, additional 
+                                    columns will be created for each field in the models, and the original
+                                    'explode' column will be dropped. Defaults to None.
+
 
         Returns:
-            pandas.DataFrame: A DataFrame containing expanded prediction data with one row per
-                              observation (unless explode argument provided) and one column per
-                              response model attribute (per rater).
+            pandas.DataFrame: A DataFrame containing expanded prediction data. If an
+                            'explode' argument is provided, the DataFrame will contain one row 
+                            per item in each exploded list *per observation*. Each rater has a 
+                            column for each attribute in the response model. If there's only
+                            one rater, no suffix is added to the column names.
 
-        Note:
-            The resulting DataFrame will have columns for each attribute in the response model,
-            suffixed by the rater number or provided suffix. If there's only one rater,
-            no suffix is added to the column names.
+        Raises:
+            ValueError: If input arguments are invalid (e.g., `suffix` is not a list,
+                    number of suffixes does not match number of raters, `data` length does not
+                    match the number of observations, `explode` is not a response model attribute
+                    or is not a list-like attribute, or exploding causes name collisions).
+            NotImplementedError: If `explode` is used with multiple raters.
         """
         attributes = self.task.response_model.model_fields.keys()
         result_data = {}
         data_is_dataframe = False
         
         # Perform some input validation
+        if suffix is not None:
+            if not isinstance(suffix, list):
+                raise ValueError(f"Suffix must be a list, not {type(suffix)}.")
+            if len(suffix) != self.n_raters:
+                raise ValueError(f"Number of suffixes ({len(suffix)}) does not match number of raters ({self.n_raters}).")
+            else:
+                suffix = [f"{s}" for s in suffix]
+        elif self.n_raters > 1:
+            suffix = [f"r{i+1}" for i in range(self.n_raters)]
         if data is not None:
             data_is_dataframe = isinstance(data, pd.DataFrame)
             if not data_is_dataframe and 'data' in attributes:
@@ -149,6 +167,8 @@ class Prediction(np.ndarray):
                 raise ValueError(f"Cannot explode on '{explode}' because it is not an attribute of the response model.")
             if data_is_dataframe and explode in data.columns:
                 raise ValueError(f"Cannot explode on '{explode}' because it is already a column in the provided data.")
+            if not self.task.is_attribute_list(explode):
+                raise ValueError(f"Cannot explode on '{explode}' because it is not a list-like attribute.")
 
         # Prepend data (if provided)
         if data is not None:
@@ -156,27 +176,28 @@ class Prediction(np.ndarray):
                 result_data = data.copy()
             else:
                 result_data['data'] = data
-        # TODO: Handle non-1D data properly (e.g., list of dicts, or pandas columns)
 
        # Append LLM responses
         for attr in attributes:
             values = self.get(attr)
             if self.n_raters > 1:
                 for rater in range(self.n_raters):
-                    if isinstance(suffix, list):
-                        column_name = f"{attr}_{suffix[rater]}"
-                    elif suffix is None:
-                        column_name = f"{attr}_r{rater+1}"
-                    else:
-                        raise TypeError(f"Unexpected type for suffix: {type(suffix)}")
+                    column_name = f"{attr}_{suffix[rater]}"
                     result_data[column_name] = values[:, rater]
             else:
                 result_data[attr] = values.flatten()
         
         result = pd.DataFrame(result_data)
         
+        # Explode list-like attribute (if requested)
         if explode is not None:
             result = result.explode(explode)
+            explode_is_list_of_pydantic_models = self.task.is_attribute_list_of_pydantic_models(explode)
+            if explode_is_list_of_pydantic_models:
+                model_fields = self.task.response_model.model_fields[explode].annotation.__args__[0].model_fields.keys()
+                for field in model_fields:
+                    result[field] = result[explode].apply(lambda x: getattr(x, field, np.nan) if not pd.isna(x) else np.nan)
+                result = result.drop(columns=[explode])
         
         return result
 

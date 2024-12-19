@@ -1,0 +1,23 @@
+{
+  "input_data": {
+    "data": ["friuts", "N/A", "vegetables", "animals"],
+    "predictions": [
+      {"items": ["apple", "banana"]},
+      {"items": []},
+      {"items": ["carrot", "potato"]},
+      {"items": ["cat", "dog"]}
+    ]
+  },
+  "expected_output": {
+    "index": [0, 0, 1, 2, 2, 3, 3],
+    "data": [
+      {"items": "apple"},
+      {"items": "banana"},
+      {"items": null},
+      {"items": "carrot"},
+      {"items": "potato"},
+      {"items": "cat"},
+      {"items": "dog"}
+    ]
+  }
+}

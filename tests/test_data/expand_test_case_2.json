@@ -1,0 +1,23 @@
+{
+  "input_data": {
+    "data": ["friuts", "N/A", "vegetables", "animals"],
+    "predictions": [
+      {"items": [{"name": "apple", "description": "A red fruit"}, {"name": "banana", "description": "A yellow fruit"}]},
+      {"items": []},
+      {"items": [{"name": "carrot", "description": "An orange vegetable"}, {"name": "potato", "description": "A starchy vegetable"}]},
+      {"items": [{"name": "cat", "description": "A furry pet"}, {"name": "dog", "description": "A loyal pet"}]}
+    ]
+  },
+  "expected_output": {
+    "index": [0, 0, 1, 2, 2, 3, 3],
+    "data": [
+      {"name": "apple", "description": "A red fruit"},
+      {"name": "banana", "description": "A yellow fruit"},
+      {"name": null, "description": null},
+      {"name": "carrot", "description": "An orange vegetable"},
+      {"name": "potato", "description": "A starchy vegetable"},
+      {"name": "cat", "description": "A furry pet"},
+      {"name": "dog", "description": "A loyal pet"}
+    ]
+  }
+}
