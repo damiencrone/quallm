@@ -189,6 +189,19 @@ class Task():
         else: # Fallback: treat as scalar if not a parameterized or typing.List
             return False
 
+    def is_attribute_list_of_pydantic_models(self, attribute: str) -> bool:
+        """
+        Checks if a given attribute in the response model is a list of Pydantic models.
+        """
+        if attribute not in self.response_model.model_fields:
+            raise ValueError(f"Attribute '{attribute}' not found in the response model.")
+        if not self.is_attribute_list(attribute):
+            return False
+        annotation = self.response_model.model_fields[attribute].annotation
+        list_type = typing.get_args(annotation)[0]
+        if issubclass(list_type, BaseModel):
+            return True
+        return False
 
 class LabelSet(str, Enum):
     """General class for category sets (e.g., labels in a sentiment analysis task)"""
