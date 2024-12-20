@@ -41,13 +41,26 @@ If using cloud-hosted LLMs, you will likely need to create an account and set up
 
 ## Usage
 
-quallm revolves around a few simple elements. The most important of these is the "task", which is essentially the combination of (1) an output schema (a Pydantic model) defining the structure of the response the LLM will generate, and (2) a prompt template providing instructions for the LLM. Once a task is defined, all one needs is one or more LLMs (or "raters") to perform the task, and a dataset, which contains each individual observation (e..g, a survey response, document, etc.) which the task will be performed on.
+quallm revolves around a few simple elements. The most important of these is the `Task`, which is essentially the combination of (1) an output schema (a Pydantic model) defining the structure of the response the LLM will generate, and (2) a prompt template providing instructions for the LLM. Once a task is defined, all one needs is one or more LLMs (or "raters") to perform the task, and a dataset, which contains each individual observation (e..g, a survey response, document, etc.) which the task will be performed on.
 
 Here are some basic examples of how to use quallm:
 
+### Setting up and testing an LLM
+
+An LLM (or rater) is configured with the `LLMClient` class (which is built around Instructor's `client.Instructor` class). In the example below, we use a locally-hosted LLM (Phi-3.5) but the same class can be used to configure cloud-hosted LLMs (with some additional inputs). Once your LLM is instantiated, you can perfrom a simple test to ensure it is working as expected. The test method takes an optional question argument; you can probably guess the default.
+
+```python
+from quallm import LLMClient
+
+llm = LLMClient(language_model="phi3.5")
+llm.test()
+# Output:
+# 'Hot dogs are technically considered sandwiches as they consist of meat between slices of bread.'
+```
+
 ### Using a pre-existing task
 
-Simple tasks such as single-label classification or sentiment analysis can be performed with pre-existing tasks[^1]. In the example below, we use a relatively small local LLM (Phi-3.5), which will likely work on most consumer devices. In this task, we ask the LLM to classify three texts, using a pre-configured sentiment analysis task, which returns a sentiment classification (one of five categories), along with an explanation and confidence rating.
+Simple tasks such as single-label classification or sentiment analysis can be performed with (and easily adapted from) pre-existing tasks[^1]. In the example below, we use a relatively small local LLM (Phi-3.5), which will likely work on most consumer devices. In this task, we ask the LLM to classify three texts, using a pre-configured sentiment analysis task (an instance of `Task`), which returns a sentiment classification (one of five categories), along with an explanation and confidence rating.
 
 ```python
 from quallm import LLMClient, Dataset, Predictor
