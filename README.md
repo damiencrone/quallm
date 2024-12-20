@@ -92,7 +92,7 @@ print(expanded_results)
 
 ### Defining a new task
 
-Aribtrary tasks can also be defined using a `TaskConfig` with (at minimum) a Pydantic model, and system and user prompt template. In the example below, we define a trivial task: The response model (i.e., the thing the LLM is tasked with generating) is a list of strings on a given topic (the `ListResponse` Pydantic model). The prompt template (in the definition of `task_config`) is a barebones template with a placeholder for the topic (which is the datapoint or observation which is piped into the prompt template at inference time). In this case, the "data" is a single observation: "ethical precepts". As instructed, the LLM returns a list of ethical precepts.
+Aribtrary tasks can also be defined using a `TaskConfig` with (at minimum) a Pydantic model, and system and user prompt template. In the example below, we define a trivial task: The response model (i.e., the thing the LLM is tasked with generating) is a list of strings on a given topic (the `ListResponse` Pydantic model). The prompt template (in the definition of `task_config`) is a barebones template with a placeholder for the topic (which is the datapoint or observation which is piped into the prompt template at inference time). In this case, the "data" are two observations: "ethical precepts" and "moral transgressions". As instructed, the LLM returns a lists of both.
 
 ```python
 from pydantic import BaseModel, Field
@@ -109,17 +109,25 @@ task_config = TaskConfig(
     user_template="Topic: {topic}"
 )
 
+data = ["ethical precepts", "moral transgressions"]
 llm_client = LLMClient(language_model="phi3.5")
 list_generation_task = Task.from_config(task_config)
 predictor = Predictor(task=list_generation_task, raters=llm_client)
-prediction = predictor.predict("ethical precepts")
+prediction = predictor.predict(data)
 
 # Print the results
-results = prediction.get()
+results = prediction.expand(data=data, explode="items")
 results
 # Output:
-# array([list(['Do unto others as you would have them do unto you (Golden Rule)', 'Seek justice and fairness', 'Respect the dignity of every individual', 'Act with integrity in all situations'])],
-#   dtype=object)
+#                   data                                              items
+# 0     ethical precepts                       Do no harm (non-maleficence)
+# 1     ethical precepts                   Be honest and act with integrity
+# 2     ethical precepts  Respect others' rights and dignity (respect fo...
+# 3     ethical precepts  Promote fairness and justice in actions, ensdi...
+# 4 moral transgressions                              Cheating on a partner
+# 5 moral transgressions               Stealing from others without remorse
+# 6 moral transgressions   Lying to manipulate or deceive for personal gain
+# 7 moral transgressions         Disrespecting someone's dignity and rights
 ```
 
 ### Using multiple language models, parallelization and arbitrary label sets
