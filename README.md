@@ -75,7 +75,7 @@ print(expanded_results)
 # 2  The text expresses a strong negative emotion t...          95  negative
 ```
 
-[^1]: Although pre-defined tasks *do* come with pre-written prompt templates, users are advised to tailor prompts to their specific use cases, as the default prompts are unlikely to be optimal for a given combination of task, LLM, and dataset.
+[^1]: Although pre-defined tasks *do* come with pre-written prompt templates, these are primarily for demonstration purposes. Users are advised to tailor prompts to their specific use cases, as the default prompts may be subject to change, and are unlikely to be optimal for your given combination of task, LLM, and dataset.
 
 ### Defining a new task
 
@@ -144,13 +144,6 @@ print(pred.expand(suffix=['llama', 'phi']))
 # 2  The text 'Car' matches the categ...  The provided text 'Car' refers ...                80             100    vehicle   vehicle
 # 3  The text 'Train' refers to a mod...  The text 'Train' refers to a mo...                80              95    vehicle   vehicle
 ```
-
-## Features
-
-- Flexible task creation for various content analysis and generation tasks using Pydantic models
-- Support for multiple LLM raters using Instructor
-- Parallelization of predictions
-- Streamlined input and output management
 
 ## License
 
