@@ -159,11 +159,11 @@ pred = predictor.predict(data=['Elephant', 'Dog', 'Car', 'Train'], max_workers=5
 # Print expanded results
 print(pred.expand(suffix=['llama', 'phi']))
 # Output:
-#    reasoning_llama                      reasoning_phi                       confidence_llama  confidence_phi  code_llama  code_phi
-# 0  The text 'Elephant' is categoriz...  The given text 'Elephant' refer...                95              98     animal    animal
-# 1  The text 'Dog' is classified as ...  The text 'Dog' refers to a comm...                95              98     animal    animal
-# 2  The text 'Car' matches the categ...  The provided text 'Car' refers ...                80             100    vehicle   vehicle
-# 3  The text 'Train' refers to a mod...  The text 'Train' refers to a mo...                80              95    vehicle   vehicle
+#                        reasoning_llama                      reasoning_phi   confidence_llama  confidence_phi  code_llama  code_phi
+# 0  The text 'Elephant' is categoriz...  The given text 'Elephant' refer...                95              98      animal    animal
+# 1  The text 'Dog' is classified as ...  The text 'Dog' refers to a comm...                95              98      animal    animal
+# 2  The text 'Car' matches the categ...  The provided text 'Car' refers ...                80             100     vehicle   vehicle
+# 3  The text 'Train' refers to a mod...  The text 'Train' refers to a mo...                80              95     vehicle   vehicle
 ```
 
 ## License
