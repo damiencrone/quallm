@@ -1,5 +1,5 @@
 
-from typing import Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any
 import pandas as pd
 import numpy as np
 
@@ -84,3 +84,114 @@ class Dataset(List[Dict[str, str]]):
             if value is None or (isinstance(value, float) and np.isnan(value)):
                 raise ValueError(f"None or NaN value found for key '{key}'")
         return item
+
+    @classmethod
+    def from_samples(cls, 
+                    data: pd.DataFrame,
+                    n_samples: int,
+                    sample_size: Union[int, List[int]],
+                    random_state: Optional[int] = None,
+                    labels: Optional[Dict[str, str]] = None,
+                    separator: str = "-----") -> 'Dataset':
+        """
+        Create a Dataset instance from samples of a pandas DataFrame.
+
+        This method generates multiple samples from the input DataFrame, where each sample
+        is a combination of randomly selected rows. The resulting Dataset contains one
+        observation per sample, where a "sample" is the unit of analysis to be passed to the
+        LLM at inference time, with all columns from the original DataFrame combined into
+        a single string representation.
+
+        Args:
+            data (pd.DataFrame): The input DataFrame to sample from.
+            n_samples (int): The number of samples to generate.
+            sample_size (Union[int, List[int]]): The number of rows to include in each sample.
+                Can be a single integer for uniform sample sizes, or a list of integers for
+                variable sample sizes. When a list is provided sample sizes are drawn randomly.
+            random_state (Optional[int], default=None): Seed for the random number generator.
+                If provided, ensures reproducibility of samples. Each sample uses a different
+                seed derived from this base value.
+            labels (Optional[Dict[str, str]], default=None): A dictionary to rename columns
+                in the input DataFrame (i.e., to label variables differently for when they get
+                passed to the LLM). Keys are original column names, values are new names that
+                the LLM will see.
+            separator (str, default="-----"): The string used to separate individual rows
+                within a sample.
+
+        Returns:
+            Dataset: A new Dataset instance where each observation is a sample containing
+            a sample of rows from the input DataFrame. The number of rows in each sample may
+            vary if a list of sample sizes is provided.
+
+        Raises:
+            ValueError: If the input is not a pandas DataFrame, or if sample_size is neither a
+            positive integer nor a list of positive integers.
+
+        Example:
+            >>> df = pd.DataFrame({
+            ...     'id': range(1, 101),
+            ...     'response': [f"Response {i}" for i in range(1, 101)],
+            ...     'sentiment': ['positive', 'negative', 'neutral'] * 33 + ['positive']
+            ... })
+            >>> dataset = Dataset.from_samples(
+            ...     data=df,
+            ...     n_samples=5,
+            ...     sample_size=3,
+            ...     random_state=42,
+            ...     labels={'id': 'ID', 'response': 'Response', 'sentiment': 'Sentiment'}
+            ... )
+            >>> print(dataset[0]['sample'])
+            ID: 52
+            Response: Response 52
+            Sentiment: positive
+            -----
+            ID: 93
+            Response: Response 93
+            Sentiment: neutral
+            -----
+            ID: 15
+            Response: Response 15
+            Sentiment: neutral
+        """
+        
+        # Data validation
+        if isinstance(data, pd.DataFrame):
+            if labels:
+                data = data.rename(columns=labels)
+        else:
+            raise ValueError("Input data must be a pandas DataFrame")
+
+        # Sample size validation
+        if isinstance(sample_size, int):
+            sample_size = [sample_size]
+        elif not isinstance(sample_size, list) or not all(isinstance(s, int) and s > 0 for s in sample_size):
+            raise ValueError("sample_size must be a positive integer or a list of positive integers")
+        
+        # Create an array of sampled sample sizes
+        if random_state is not None:
+            np.random.seed(random_state)
+        sampled_sizes = np.random.choice(sample_size, size=n_samples)
+
+        # Generate samples
+        samples = []
+        for n in range(n_samples):
+            if random_state is not None:
+                r = random_state + n
+            else:
+                r = None
+            
+            size = sampled_sizes[n]
+            sample = data.sample(n=size, replace=True, random_state=r)
+            sample_str = cls._combine_columns(sample, separator)
+            samples.append({"sample": sample_str})
+
+        # Create and return a new Dataset instance
+        return cls(samples, data_args=["sample"])
+
+    @staticmethod
+    def _combine_columns(sample: pd.DataFrame, separator: str) -> str:
+        combined = []
+        for _, row in sample.iterrows():
+            row_str = "\n".join(f"{col}: {val}" for col, val in row.items() if pd.notna(val))
+            combined.append(row_str)
+        return f"\n{separator}\n".join(combined)
