@@ -334,4 +334,5 @@ def test_expand_with_explode(test_case, response_model):
 
     # Test expand with explode
     expanded_explode = prediction.expand(explode='items')
+    expanded_explode = expanded_explode.drop(columns='rater')
     pd.testing.assert_frame_equal(expanded_explode, data['expected_output'])

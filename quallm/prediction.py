@@ -123,27 +123,29 @@ class Prediction(np.ndarray):
                                         If a pandas.DataFrame is provided, its columns are directly merged into the 
                                         resulting DataFrame. Defaults to None.
             format (str, optional): Output format, either 'wide' or 'long'. Defaults to 'wide' unless explode is specified.
-            explode (str, optional): List-like response model attribute to explode into multiple
+            explode (str, optional): Name of list-like response model attribute to explode into multiple
                                     rows. If the attribute is a list of Pydantic models, additional 
                                     columns will be created for each field in the models, and the original
                                     'explode' column will be dropped. Defaults to None.
 
         Returns:
-            pandas.DataFrame: A DataFrame containing expanded prediction data. If an
-                            'explode' argument is provided, the DataFrame will contain one row 
-                            per item in each exploded list *per observation*. Each rater has a 
-                            column for each attribute in the response model. If there's only
-                            one rater, no suffix is added to the column names.
+            pandas.DataFrame: A DataFrame containing expanded prediction data. The structure depends on the format:
+                - In 'wide' format: Each rater has a column for each attribute in the response model.
+                If there's only one rater, no suffix is added to the column names.
+                - In 'long' format: Contains one row per observation per rater, with an additional 'rater' column.
+                If an 'explode' argument is provided, the DataFrame will contain one row per item in each 
+                exploded list *per observation* *per rater*.
+                - If the optional data arugment is provided, the DataFrame will contain the additional data columns
+                prepended to the result.
 
         Raises:
-            ValueError: If input arguments are invalid (e.g., `suffix` is not a list,
-                    number of suffixes does not match number of raters, `data` length does not
+            ValueError: If input arguments are invalid (e.g., `rater_labels` is not a list,
+                    number of rater labels does not match number of raters, `data` length does not
                     match the number of observations, `explode` is not a response model attribute
-                    or is not a list-like attribute, or exploding causes name collisions).
-            NotImplementedError: If `explode` is used with multiple raters.
+                    or is not a list-like attribute, exploding causes name collisions, or
+                    'wide' format is specified with explode).
         """
         attributes = self.task.response_model.model_fields.keys()
-        result_data = {}
         data_is_dataframe = False
         
         # Perform some input validation
@@ -158,7 +160,7 @@ class Prediction(np.ndarray):
                 raise ValueError(f"rater_labels must be a list, not {type(rater_labels)}.")
             if len(rater_labels) != self.n_raters:
                 raise ValueError(f"Number of rater labels ({len(rater_labels)}) does not match number of raters ({self.n_raters}).")
-        elif self.n_raters > 1:
+        else:
             rater_labels = [f"r{i+1}" for i in range(self.n_raters)]
         # Validate data
         if data is not None:
@@ -169,7 +171,7 @@ class Prediction(np.ndarray):
                 raise ValueError(f"Data length ({len(data)}) does not match number of observations ({self.n_obs}).")
         # Validate format
         if format is not None and format not in ['wide', 'long']:
-            raise ValueError("format must be either 'wide' or 'long'")
+            raise ValueError(f"format must be either 'wide' or 'long'; got '{format}' instead.")
         if explode is not None:
             if format == 'wide':
                 raise ValueError("Cannot use 'wide' format when explode is specified")
@@ -177,8 +179,6 @@ class Prediction(np.ndarray):
         format = 'wide' if format is None else format
         # Validate explode
         if explode is not None:
-            if self.n_raters > 1:
-                raise NotImplementedError(f"Exploding list-like attributes is not (yet) supported for multiple raters. For now, try using pandas' explode method on the output instead.")
             if explode not in attributes:
                 raise ValueError(f"Cannot explode on '{explode}' because it is not an attribute of the response model.")
             if data_is_dataframe and explode in data.columns:
@@ -186,28 +186,40 @@ class Prediction(np.ndarray):
             if not self.task.is_attribute_list(explode):
                 raise ValueError(f"Cannot explode on '{explode}' because it is not a list-like attribute.")
 
-        # Prepend data (if provided)
-        if data is not None:
-            if data_is_dataframe:
-                result_data = data.copy()
-            else:
-                result_data['data'] = data
-
         # Initialize list to store results for each rater
         rater_result_list = []
-        
-        # Append LLM responses
+
+        # Extract LLM responses
         for rater in range(self.n_raters):
-            rater_data = {}
+            rater_result = {}
+            if format == 'long':
+                rater_result['rater'] = rater_labels[rater]
             for attr in attributes:
                 values = self.get(attr)
                 if self.n_raters > 1:
-                    column_name = f"{attr}_{rater_labels[rater]}"
-                    result_data[column_name] = values[:, rater]
+                    if format == 'wide':
+                        column_name = f"{attr}_{rater_labels[rater]}"
+                    else:  # long format
+                        column_name = attr
+                    rater_result[column_name] = values[:, rater]
                 else:
-                    result_data[attr] = values.flatten()
+                    rater_result[attr] = values.flatten()
+            
+            rater_result_list.append(rater_result)
 
-        result = pd.DataFrame(result_data)
+        # Prepend data (if provided)
+        if data is not None:
+            rater_result_list = self._prepend_data_to_rater_responses(rater_result_list, data, format)
+
+        # Construct final DataFrame
+        if format == 'wide':
+            result = pd.DataFrame({k: v for d in rater_result_list for k, v in d.items()})
+        elif format == 'long':
+            result = pd.DataFrame([
+                {**rater_result, **{k: v[i] for k, v in rater_result.items() if isinstance(v, (list, np.ndarray))}}
+                for rater_result in rater_result_list
+                for i in range(len(next(iter([v for v in rater_result.values() if isinstance(v, (list, np.ndarray))]))))
+            ])
         
         # Explode list-like attribute (if requested)
         if explode is not None:
@@ -220,6 +232,30 @@ class Prediction(np.ndarray):
                 result = result.drop(columns=[explode])
         
         return result
+    
+    def _prepend_data_to_rater_responses(self, rater_result_list, data, format):
+        """
+        Prepends data for each rater's result based on the specified format.
+        
+        Args:
+            rater_result_list (list): List of dictionaries containing rater results.
+            data: Data to be prepended.
+            format (str): 'wide' or 'long' format.
+        
+        Returns:
+            list: Updated list of dictionaries with additional data prepended.
+        """
+        indices = [0] if format == 'wide' else range(len(rater_result_list))
+        for idx in indices:
+            new_result = {}
+            if isinstance(data, pd.DataFrame):
+                for col in data.columns:
+                    new_result[col] = data[col].tolist()
+            else:
+                new_result['data'] = data
+            new_result.update(rater_result_list[idx])
+            rater_result_list[idx] = new_result
+        return rater_result_list
 
     def code_reliability(self):
         # TODO (later): Compute reliability metrics based on the results when n_raters > 1
