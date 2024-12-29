@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import warnings
 
 
 class Prediction(np.ndarray):
@@ -106,7 +107,7 @@ class Prediction(np.ndarray):
         
         return result
     
-    def expand(self, suffix: list = None, data=None, explode: str = None):
+    def expand(self, suffix: list = None, rater_labels: list = None, data=None, format: str = None, explode: str = None):
         """
         Convert the prediction array into a pandas DataFrame.
 
@@ -114,17 +115,18 @@ class Prediction(np.ndarray):
         all attributes of the response model for each rater.
 
         Args:
-            suffix (list, optional): List of suffixes to use for each rater's columns.
-                                    If None, uses '_r1', '_r2', etc. Defaults to None.
+            suffix (list, optional): DEPRECATED. Use rater_labels instead.
+            rater_labels (list, optional): List of labels to use for each rater's columns.
+                                        If None, uses '_r1', '_r2', etc. Defaults to None.
             data (array-like or pandas.DataFrame, optional): Additional data to include in the DataFrame.
                                         If an array-like object is provided, it's added as a single 'data' column.
                                         If a pandas.DataFrame is provided, its columns are directly merged into the 
                                         resulting DataFrame. Defaults to None.
+            format (str, optional): Output format, either 'wide' or 'long'. Defaults to 'wide' unless explode is specified.
             explode (str, optional): List-like response model attribute to explode into multiple
                                     rows. If the attribute is a list of Pydantic models, additional 
                                     columns will be created for each field in the models, and the original
                                     'explode' column will be dropped. Defaults to None.
-
 
         Returns:
             pandas.DataFrame: A DataFrame containing expanded prediction data. If an
@@ -145,21 +147,35 @@ class Prediction(np.ndarray):
         data_is_dataframe = False
         
         # Perform some input validation
+        # Validate suffix and rater_labels
         if suffix is not None:
-            if not isinstance(suffix, list):
-                raise ValueError(f"Suffix must be a list, not {type(suffix)}.")
-            if len(suffix) != self.n_raters:
-                raise ValueError(f"Number of suffixes ({len(suffix)}) does not match number of raters ({self.n_raters}).")
-            else:
-                suffix = [f"{s}" for s in suffix]
+            warnings.warn("The 'suffix' argument is deprecated. Use 'rater_labels' instead.", DeprecationWarning, stacklevel=2)
+            if rater_labels is not None:
+                raise ValueError("Cannot provide both 'suffix' and 'rater_labels'. Use 'rater_labels' only.")
+            rater_labels = suffix
+        if rater_labels is not None:
+            if not isinstance(rater_labels, list):
+                raise ValueError(f"rater_labels must be a list, not {type(rater_labels)}.")
+            if len(rater_labels) != self.n_raters:
+                raise ValueError(f"Number of rater labels ({len(rater_labels)}) does not match number of raters ({self.n_raters}).")
         elif self.n_raters > 1:
-            suffix = [f"r{i+1}" for i in range(self.n_raters)]
+            rater_labels = [f"r{i+1}" for i in range(self.n_raters)]
+        # Validate data
         if data is not None:
             data_is_dataframe = isinstance(data, pd.DataFrame)
             if not data_is_dataframe and 'data' in attributes:
                 raise ValueError("Cannot prepend data because 'data' is already used in the response model.")
             if self.n_obs != len(data):
                 raise ValueError(f"Data length ({len(data)}) does not match number of observations ({self.n_obs}).")
+        # Validate format
+        if format is not None and format not in ['wide', 'long']:
+            raise ValueError("format must be either 'wide' or 'long'")
+        if explode is not None:
+            if format == 'wide':
+                raise ValueError("Cannot use 'wide' format when explode is specified")
+            format = 'long' if format is None else format
+        format = 'wide' if format is None else format
+        # Validate explode
         if explode is not None:
             if self.n_raters > 1:
                 raise NotImplementedError(f"Exploding list-like attributes is not (yet) supported for multiple raters. For now, try using pandas' explode method on the output instead.")
@@ -177,16 +193,20 @@ class Prediction(np.ndarray):
             else:
                 result_data['data'] = data
 
-       # Append LLM responses
-        for attr in attributes:
-            values = self.get(attr)
-            if self.n_raters > 1:
-                for rater in range(self.n_raters):
-                    column_name = f"{attr}_{suffix[rater]}"
-                    result_data[column_name] = values[:, rater]
-            else:
-                result_data[attr] = values.flatten()
+        # Initialize list to store results for each rater
+        rater_result_list = []
         
+        # Append LLM responses
+        for rater in range(self.n_raters):
+            rater_data = {}
+            for attr in attributes:
+                values = self.get(attr)
+                if self.n_raters > 1:
+                    column_name = f"{attr}_{rater_labels[rater]}"
+                    result_data[column_name] = values[:, rater]
+                else:
+                    result_data[attr] = values.flatten()
+
         result = pd.DataFrame(result_data)
         
         # Explode list-like attribute (if requested)
