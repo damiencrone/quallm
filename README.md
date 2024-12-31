@@ -37,7 +37,7 @@ These instructions will create a new conda environment with Python 3.10 and inst
 ollama pull phi3.5
 ```
 
-If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. For further details on setting up different LLMs with different providers, refer to the [Instructor](https://python.useinstructor.com) documentation.
+If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. For further details on setting up different LLMs with different providers, refer to the [Instructor](https://python.useinstructor.com/integrations/) documentation on integrations with specific LLM providers.
 
 ## Usage
 
