@@ -17,7 +17,7 @@ class Dataset(List[Dict[str, str]]):
 
     Args:
         data: The input data. Can be a single dictionary, a string (for single-argument datasets),
-              or a list/array/series of dictionaries or values.
+              a list/array/series of dictionaries or values, or a DataFrame.
         data_args (str or List[str]): The name(s) of the data argument(s) expected in each observation.
 
     Raises:
@@ -30,7 +30,7 @@ class Dataset(List[Dict[str, str]]):
         {'input_text': 'text1'}
     """
     def __init__(self,
-                 data: Union[str, Dict[str, Any], List[Any], pd.Series, np.ndarray, List[Dict[str, Any]]],
+                 data: Union[str, Dict[str, Any], List[Any], pd.Series, pd.DataFrame, np.ndarray, List[Dict[str, Any]]],
                  data_args: Union[str, List[str]]):
         if isinstance(data_args, str):
             data_args = [data_args]
@@ -46,8 +46,7 @@ class Dataset(List[Dict[str, str]]):
             if len(data.columns) == 1:
                 data = data.iloc[:, 0]  # Convert single-column DataFrame to Series
             else:
-                # TODO: Add functionality to handle multiple dataframe columns as separate data args
-                raise ValueError(f"DataFrame input must have only one column for {n_expected_data_args} data arg(s)")
+                data = data.to_dict(orient="records")
 
         is_list_like = isinstance(data, (list, np.ndarray, pd.Series))
         is_list_of_dicts = is_list_like and all(isinstance(item, dict) for item in data)
