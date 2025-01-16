@@ -56,7 +56,7 @@ class Predictor:
 
 
     def predict(self,
-                data: Union[str, Dict[str, str], List[str], pd.Series, np.ndarray, List[Dict[str, str]]],
+                data: Union[str, Dict[str, str], List[str], pd.Series, pd.DataFrame, np.ndarray, List[Dict[str, str]]],
                 predictions: Prediction = None,
                 max_workers: int = 1
                 ) -> Prediction:
@@ -71,7 +71,7 @@ class Predictor:
         existing predictions.
 
         Args:
-            data (Union[str, Dict[str, str], List[str], pd.Series, np.ndarray, List[Dict[str, str]]):
+            data (Union[str, Dict[str, str], List[str], pd.Series, pd.DataFrame, np.ndarray, List[Dict[str, str]]):
                 The input data to be analyzed. Can be in various formats, which will be
                 standardized internally.
             predictions (Prediction, optional): An existing Prediction object to update.
