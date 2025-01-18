@@ -1,6 +1,7 @@
 
 from openai import OpenAI
 from pydantic import BaseModel
+from typing import List
 import instructor
 
 DEFAULT_LANGUAGE_MODEL = "gemma2"
@@ -24,11 +25,13 @@ class LLMClient:
                  client: instructor.client.Instructor = default_client,
                  language_model: str = DEFAULT_LANGUAGE_MODEL,
                  temperature: float = DEFAULT_TEMPERATURE,
-                 max_retries: int = DEFAULT_RETRIES):
+                 max_retries: int = DEFAULT_RETRIES,
+                 role_args: dict = {}):
         self.client = client
         self.language_model = language_model
         self.temperature = temperature
         self.max_retries = max_retries
+        self.role_args = role_args
 
     def request(self, system_prompt, user_prompt, response_model):
         """Request a response from LLM given a prompt"""
@@ -41,6 +44,28 @@ class LLMClient:
             max_retries=self.max_retries
         )
         return resp
+    
+    def set_role_args(self, role_args: dict):
+        """Set the role arguments for the LLM client"""
+        self.role_args = role_args
+        
+    def assign_roles(self, roles: List[dict]) -> list:
+        """Generate a list of LLM clients with different roles defined by a list of role argument dictionaries"""
+        rater_list = []
+        for role in roles:
+            llm = self.copy()
+            llm.set_role_args(role)
+            rater_list.append(llm)
+        return rater_list
+    
+    def copy(self):
+        return LLMClient(
+            client=self.client,
+            language_model=self.language_model,
+            temperature=self.temperature,
+            max_retries=self.max_retries,
+            role_args=self.role_args
+        )
     
     def test(self, question=None) -> str:
         """Test the LLM client with a simple request"""

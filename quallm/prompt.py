@@ -15,6 +15,7 @@ class Prompt:
         system_template (str): Template string for the system prompt.
         user_template (str): Template string for the user prompt.
         data_args (List[str]): List of argument names to be filled with data at inference time.
+        role_args (List[str]): List of argument names to be filled with LLM role-specific information.
         task_args (List[str]): List of argument names to be filled with task-specific information.
         has_formattable_task_arguments (bool): Indicates if there are still unformatted task arguments.
         unformatted_task_arguments (set): Set of task argument names that haven't been formatted yet.
@@ -25,19 +26,29 @@ class Prompt:
         user_template (str): Template string for the user prompt.
         data_args (Union[str, List[str]]): Argument name(s) to be filled with data at inference time.
     """
-    def __init__(self, system_template: str, user_template: str, data_args: Union[str, List[str]]):
+    def __init__(self,
+                 system_template: str,
+                 user_template: str,
+                 data_args: Union[str, List[str]],
+                 role_args: Union[str, List[str]] = None):
         self.system_template = system_template
         self.user_template = user_template
         if isinstance(data_args, str):
             data_args = [data_args]
+        if role_args is None:
+            role_args = []
+        elif isinstance(role_args, str):
+            role_args = [role_args]
         all_arguments = self.extract_arguments(system_template, user_template)
         self.data_args = self.infer_data_args(all_arguments, data_args)
-        self.task_args = [arg for arg in all_arguments if arg not in self.data_args]
+        self.role_args = role_args
+        non_task_args = self.data_args + self.role_args
+        self.task_args = [arg for arg in all_arguments if arg not in non_task_args]
         
-        # Initialize formatting status
+        # Initialize task arg formatting status
         self.has_formattable_task_arguments = bool(self.task_args)
         self.unformatted_task_arguments = set(self.task_args)  # All task arguments start as unformatted
-        self.formatted_task_arguments = {}  # To hold the formatted values
+        self.formatted_task_arguments = {} # To hold the formatted values
 
     def extract_arguments(self, *templates: str) -> List[str]:
         """Extract all argument names from the provided templates."""
@@ -72,17 +83,16 @@ class Prompt:
             assert self.has_formattable_task_arguments, f"All task arguments [{', '.join(self.task_args)}] have already been formatted; No task arguments available for formatting."
             assert set(kwargs.keys()) == set(self.task_args), "Keys in kwargs do not match the expected task arguments."
             for arg in self.task_args:
-                if arg in kwargs:
-                    self.formatted_task_arguments[arg] = kwargs[arg]
-                    self.unformatted_task_arguments.discard(arg)
+                self.formatted_task_arguments[arg] = kwargs[arg]
+                self.unformatted_task_arguments.discard(arg)
             self.system_prompt = self.format_template(self.system_template, **self.formatted_task_arguments)
             self.user_prompt = self.format_template(self.user_template, **self.formatted_task_arguments)
             self.has_formattable_task_arguments = bool(self.unformatted_task_arguments)
         return self
     
-    def insert_data(self, **kwargs):
-        """Format the system and user prompts with provided data arguments, returning a new instance of the prompt."""
-        assert set(kwargs.keys()) == set(self.data_args), "Keys in kwargs do not match the expected data arguments."
+    def insert_role_and_data(self, **kwargs):
+        """Format the system and user prompts with provided role and data arguments, returning a new instance of the prompt."""
+        assert set(kwargs.keys()) == set(self.data_args + self.role_args), f"Keys in kwargs {kwargs.keys()} do not match the set of expected data {self.data_args} and role {self.role_args} arguments"
         formatted_prompt = Prompt(self.system_template, self.user_template, self.data_args)
         formatted_prompt.system_prompt = formatted_prompt.format_template(self.system_prompt, **kwargs)
         formatted_prompt.user_prompt = formatted_prompt.format_template(self.user_prompt, **kwargs)

@@ -111,7 +111,8 @@ class Predictor:
             for j in range(self.n_raters):
                 if predictions[i,j] is None:  # Only create tasks for unmade predictions
                     language_model = self.raters[j]
-                    formatted_prompt = self.task.prompt.insert_data(**data_point)
+                    role_and_data_args = language_model.role_args | data_point
+                    formatted_prompt = self.task.prompt.insert_role_and_data(**role_and_data_args)
                     tasks.append(((i, j), language_model, formatted_prompt))
         # Execute predictions
         if max_workers > 1:

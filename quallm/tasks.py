@@ -46,12 +46,17 @@ class TaskConfig:
                  user_template: str,
                  task_arg_values: Dict = None,
                  data_args: Union[str, List[str]] = None,
+                 role_args: Union[str, List[str]] = None,
                  output_attribute: str = None,
                  output_type: str = None,
                  kwargs: Dict = None # Optional extra arguments for specific tasks
                  ):
         self.response_model = response_model
-        self.prompt = Prompt(system_template, user_template, data_args)
+        if role_args is None:
+            role_args = []
+        elif isinstance(role_args, str):
+            role_args = [role_args]
+        self.prompt = Prompt(system_template, user_template, data_args, role_args)
         self.task_arg_values = task_arg_values or {}
         self.output_attribute = self.infer_output_attribute(output_attribute)
         self.output_type = self.infer_output_type(output_type)
@@ -88,7 +93,10 @@ class TaskConfig:
 
     def get_prompt(self, custom_task_args: Dict=None) -> Prompt:
         task_args = self.task_arg_values.copy()
-        prompt = Prompt(self.prompt.system_template, self.prompt.user_template, self.prompt.data_args)
+        prompt = Prompt(system_template=self.prompt.system_template,
+                        user_template=self.prompt.user_template,
+                        data_args=self.prompt.data_args,
+                        role_args=self.prompt.role_args)
         if custom_task_args:
             task_args.update(custom_task_args)
         return prompt.define_task(**task_args)
