@@ -166,6 +166,57 @@ print(pred.expand(suffix=['llama', 'phi']))
 # 3  The text 'Train' refers to a mod...  The text 'Train' refers to a mo...                80              95     vehicle   vehicle
 ```
 
+### Assigning different roles to different raters
+
+In some cases, users may want to assign different roles to different raters. For example, one rater might take the perspective of a social psychologist, while another might take the perspective of a political scientist. This can be done by defining (1) defining role arguments in the task config, (2) defining a list of role dictionaries and passing these to the `assign_roles` method of the `LLMClient` object (which returns a list of raters, each with a different role).
+
+```python
+from pydantic import BaseModel, Field
+from typing import List
+from quallm.tasks import Task, TaskConfig
+from quallm import LLMClient, Predictor
+
+class ListResponse(BaseModel):
+    items: List[str] = Field(description="A list of items relating to a topic")
+
+task_config = TaskConfig(
+    response_model=ListResponse,
+    system_template="{role}. Generate a short list based on the topic provided.",
+    user_template="Topic: {topic}",
+    data_args="topic",
+    role_args="role",
+)
+
+data = ["foods", "inanimate objects"]
+llm = llm_a = LLMClient(language_model="olmo2")
+roles = [{"role": "You are a helpful assistant who only responds with things beginning with the letter A"},
+         {"role": "You are a helpful assistant who only responds with things beginning with the letter B"}]
+rater_list = llm.assign_roles(roles)
+list_generation_task = Task.from_config(task_config)
+predictor = Predictor(task=list_generation_task, raters=rater_list)
+prediction = predictor.predict(data)
+
+# Print the results
+results = prediction.expand(data=data, explode="items")
+print(results)
+# Output:
+#                data   rater      items
+# 0 foods               r1     Apples
+# 0 foods               r1     Avocado
+# 0 foods               r1     Almonds
+# 0 foods               r1     Artichoke
+# 1 inanimate objects   r1     apple
+# 1 inanimate objects   r1     airplane
+# 1 inanimate objects   r1     antenna
+# 2 foods               r2     Banana
+# 2 foods               r2     Blueberry
+# 2 foods               r2     Bread
+# 2 foods               r2     Beans
+# 3 inanimate objects   r2     book
+# 3 inanimate objects   r2     ball
+# 3 inanimate objects   r2     bottle
+```
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE.txt).
