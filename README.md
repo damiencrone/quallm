@@ -170,6 +170,8 @@ print(pred.expand(suffix=['llama', 'phi']))
 
 In some cases, users may want to assign different roles to different raters. For example, one rater might take the perspective of a social psychologist, while another might take the perspective of a political scientist. This can be done by defining (1) defining role arguments in the task config, (2) defining a list of role dictionaries and passing these to the `assign_roles` method of the `LLMClient` object (which returns a list of raters, each with a different role).
 
+Note that the content of the role is defined by placeholders in the system (and/or user) prompt template. In this specific example, the role is simply defined by a single placeholder `{role}`, which appears in one location in the system prompt template, but much more complex roles or combinations of instructions can be defined by adding more placeholders to the prompt template (along with corresponding key-value pairs in the role dictionaries for each rater).
+
 ```python
 from pydantic import BaseModel, Field
 from typing import List
