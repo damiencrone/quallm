@@ -6,9 +6,10 @@ Key features of quallm include:
 
 - A modular design that separates tasks, data handling, inference, and output handling
 - Output validation using [Instructor](https://python.useinstructor.com)
+- Allows streamlined routing of requests through [LiteLLM](https://docs.litellm.ai/docs/)
 - Support for defining arbitrary structured outputs using [Pydantic](https://docs.pydantic.dev/latest/) models
 - Built-in, customizable tasks for common analyses like single-labeled classification
-- Support for multiple "raters" (different language model instances) for the same task
+- Support for multiple "raters" (different language model instances) and "roles" (different prompts) for the same task
 - Options for parallel processing to improve performance on larger datasets
 
 ## Installation
@@ -37,7 +38,7 @@ These instructions will create a new conda environment with Python 3.10 and inst
 ollama pull phi3.5
 ```
 
-If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. For further details on setting up different LLMs with different providers, refer to the [Instructor](https://python.useinstructor.com/integrations/) documentation on integrations with specific LLM providers.
+If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. The easiest way to use a cloud provider will be to initialize a client with `LLMClient.from_litellm()`.
 
 ## Usage
 
@@ -47,7 +48,7 @@ Here are some basic examples of how to use quallm:
 
 ### Setting up and testing an LLM
 
-An LLM (or rater) is configured with the `LLMClient` class (which is built around Instructor's `client.Instructor` class). In the example below, we use a locally-hosted LLM (Phi-3.5) but the same class can be used to configure cloud-hosted LLMs (with some additional inputs). Once your LLM is instantiated, you can perfrom a simple test to ensure it is working as expected. The test method takes an optional question argument; you can probably guess the default.
+An LLM (or rater) is configured with the `LLMClient` class (which is built around Instructor's `client.Instructor` class). In the example below, we use a locally-hosted LLM (Phi-3.5, a 3.8B parameter model released by Microsoft in August 2024) but the same class can be used to configure cloud-hosted LLMs (with some additional inputs). Once your LLM is instantiated, you can perfrom a simple test to ensure it is working as expected. The test method takes an optional question argument; you can probably guess the default.
 
 ```python
 from quallm import LLMClient
@@ -58,6 +59,26 @@ llm.test()
 # 'Hot dogs are technically considered sandwiches as they consist of meat between slices of bread.'
 ```
 
+If using a cloud-hosted LLM, you can specify the model using `LLMClient.from_litellm()`. Assuming your API key is set in your environment, you can use the following code to configure a cloud-hosted LLM:
+
+```python
+from quallm import LLMClient
+
+# With OpenAI
+llm = LLMClient.from_litellm(language_model="openai/gpt-4o")
+llm.test()
+# Output:
+# "A hot dog is a sandwich because it's meat in bread."
+
+# With Gemini, at a higher temperature
+llm = LLMClient.from_litellm(language_model="gemini/gemini-2.0-flash", temperature=2.0)
+llm.test()
+# Output:
+# "A hot dog is not a sandwich because it is its own category!"
+```
+
+For more information on providers supported by LiteLLM, see the [LiteLLM documentation](https://docs.litellm.ai/docs/providers). Otherwise, if not routing requests through LiteLLM, for further details on setting up different LLMs with different providers, refer to the [Instructor](https://python.useinstructor.com/integrations/) documentation on integrations with specific LLM providers.
+
 ### Using a pre-existing task
 
 Simple tasks such as single-label classification or sentiment analysis can be performed with (and easily adapted from) pre-existing tasks[^1]. In the example below, we use a relatively small local LLM (Phi-3.5), which will likely work on most consumer devices. In this task, we ask the LLM to classify three texts, using a pre-configured sentiment analysis task (an instance of `Task`), which returns a sentiment classification (one of five categories), along with an explanation and confidence rating.
@@ -66,7 +87,7 @@ Simple tasks such as single-label classification or sentiment analysis can be pe
 from quallm import LLMClient, Dataset, Predictor
 from quallm.tasks import SentimentAnalysisTask
 
-llm = LLMClient(language_model="phi3.5") # Defaults to Ollama but will work with any instructor client
+llm = LLMClient(language_model="phi3.5")
 task = SentimentAnalysisTask()
 dataset = Dataset(['I love this!', 'It\'s okay.', 'I hate this.'], 'input_text')
 

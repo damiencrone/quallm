@@ -65,3 +65,6 @@ venv.bak/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Test notebooks
+test_notebooks/
