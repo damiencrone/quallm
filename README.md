@@ -95,7 +95,8 @@ from quallm.tasks import SentimentAnalysisTask
 
 llm = LLMClient(language_model="phi3.5")
 task = SentimentAnalysisTask()
-dataset = Dataset(['I love this!', 'It\'s okay.', 'I hate this.'], 'input_text')
+dataset = Dataset(data=['I love this!', 'It\'s okay.', 'I hate this.'],
+                  data_args='input_text')
 
 # Create predictor and get predictions
 predictor = Predictor(raters=llm, task=task)
@@ -116,6 +117,31 @@ print(expanded_results)
 ```
 
 Although pre-defined tasks *do* come with pre-written prompt templates, be aware that these are primarily for demonstration purposes. Users are advised to tailor tasks and prompts to their specific use cases, as the default prompts may be subject to change, and are unlikely to be optimal for your given combination of task, LLM, and dataset (the same prompt may work well for one LLM but not another).
+
+### Understanding datasets
+
+The `Dataset` class is a core component of quallm that simplifies working with your data before passing it to language models. At its core, a `Dataset` is essentially a list of dictionaries, with each dictionary representing a single observation. The keys in these dictionaries correspond to placeholders in your prompt templates, and the values are the actual data that will be inserted at inference time. The `Dataset` can be instantiated from a variety of data types, including lists, dictionaries, and pandas DataFrames.
+
+You should use a `Dataset` when your task requires multiple data arguments (e.g., a classification task that needs both a document and a category to classify it against), or you want to transform your data into a specific format before passing it to the model. For simple cases with a single data argument, quallm is designed to handle raw data directly. In such cases, you can pass a list of strings, a pandas Series, or similar directly to the Predictor without needing to create a `Dataset`.
+
+Here is an example of how to create a `Dataset` with multiple data arguments:
+
+```python
+from quallm import Dataset
+import pandas as pd
+
+# Creating a Dataset with multiple data arguments from a DataFrame
+df = pd.DataFrame({
+    'question': ['What is the capital of France?', 'Who wrote Hamlet?'],
+    'context': ['France is a country in Europe.', 'Shakespeare was a playwright.']
+})
+dataset = Dataset(data=df, data_args=['question', 'context'])
+
+# Accessing an observation
+print(dataset[0])
+# Output:
+# {'question': 'What is the capital of France?', 'context': 'France is a country in Europe.'}
+```
 
 ### Defining a new task
 
