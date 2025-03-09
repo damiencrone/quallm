@@ -203,7 +203,7 @@ class ConceptList(BaseModel):
 task_config = TaskConfig(
     response_model=ConceptList,
     system_template="Extract a list of psychological concepts from the provided text.",
-    user_template="Text: {topic}"
+    user_template="Text: {text}"
 )
 
 data = ["I love the way the sun sets over the ocean; it's so serene and calming.",
