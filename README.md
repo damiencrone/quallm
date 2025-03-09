@@ -185,6 +185,54 @@ results
 # 7 moral transgressions         Disrespecting someone's dignity and rights
 ```
 
+With a little imagination, design patterns like the above can be applied to inductive content coding tasks where the LLM is tasked returning a list of arbitrarily constrained labels, concepts, and the like (i.e., with any fields you want) to describe a set of observations.
+
+```python
+from pydantic import BaseModel, Field
+from typing import List
+from quallm.tasks import Task, TaskConfig
+from quallm import LLMClient, Predictor
+
+class PsychologicalConcept(BaseModel):
+    concept_id: str = Field(description="A unique, descriptive identifier for the psychological concept (lowercase with underscores)")
+    concept_definition: str = Field(description="A succinct definition of the psychological concept")
+
+class ConceptList(BaseModel):
+    concepts: List[PsychologicalConcept] = Field(description="A list of psychological concepts extracted from the text")
+
+task_config = TaskConfig(
+    response_model=ConceptList,
+    system_template="Extract a list of psychological concepts from the provided text.",
+    user_template="Text: {topic}"
+)
+
+data = ["I love the way the sun sets over the ocean; it's so serene and calming.",
+        "The book was so engaging that I couldn't put it down.",
+        "I need a new toaster oven, but I don't have time to shop for one.",
+        "The concert was a fantastic experience with great music and energy."]
+
+llm = LLMClient.from_litellm(language_model="openai/gpt-4o-mini")
+list_generation_task = Task.from_config(task_config)
+predictor = Predictor(task=list_generation_task, raters=llm)
+prediction = predictor.predict(data)
+
+# Print the results
+# Note that the explode argument references an attribute of the response model
+# that is used to expand the list of concepts into separate rows
+results = prediction.expand(data=data, explode="concepts")
+results
+# Output:
+# data                                                rater concept_id       concept_definition
+# 0 I love the way the sun sets over the ocean; it... r1    serenity        A state of being calm, peaceful, and untroubled.
+# 0 I love the way the sun sets over the ocean; it... r1    calmness        A mental state characterized by the absence of...
+# 1 The book was so engaging that I couldn't put i... r1    engagement      A psychological state characterized by being f...
+# 2 I need a new toaster oven, but I don't have ti... r1    time_management The process of planning and controlling how mu...
+# 2 I need a new toaster oven, but I don't have ti... r1    decision_making The cognitive process of selecting a course of...
+# 3 The concert was a fantastic experience with gr... r1    experience      A psychological event or occurrence that indiv...
+# 3 The concert was a fantastic experience with gr... r1    energy          A psychological state that reflects enthusiasm...
+# 3 The concert was a fantastic experience with gr... r1    music           An art form and cultural activity that uses so...
+```
+
 ### Using multiple language models, parallelization and arbitrary label sets
 
 Many use cases for quallm will likely entail labelling tasks in which labels are predicted for a large number of observations. As such, this example provides a barebones demonstration of how one might approach such a use case, using multiple raters, parallelizing predictions, and defining custom label sets (using the `LabelSet` class, which can be passed to a generic `SingleLabelCategorizationTask`, or if preferred, an entirely user-defined task).
