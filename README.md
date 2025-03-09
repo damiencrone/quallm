@@ -1,6 +1,8 @@
 # quallm
 
-quallm is a Python library designed to simplify and streamline LLM-assisted content analysis tasks. It provides a flexible framework for defining, executing, and analyzing various content analysis (and similar) tasks using language models. quallm is built to work seamlessly with both local (i.e., on-device) models through [Ollama](https://ollama.com) and cloud-hosted models (e.g., those provided by Together, Groq, OpenAI, and other services), providing the flexibility to choose the most suitable option for a given task.
+`quallm` is a Python library designed to simplify and streamline LLM-assisted content analysis tasks. It provides a flexible framework for defining, executing, and analyzing various content analysis (and similar) tasks using language models (e.g., classification, scaling/scoring, summarization, and inductive and deductive content coding pipelines).
+
+The design philosophy of `quallm` is to abstract away the portions of content coding workflows that are typically of little interest to researchers (e.g., connecting to language models, passing data to the model, ensuring specific output formatting, parsing outputs), while retaining a high degree of flexibility, control, and transparency over the critical parts of the workflow (e.g., task definition, output specification, model selection, prompting). `quallm` is built to work seamlessly with both local (i.e., on-device) models through [Ollama](https://ollama.com) and cloud-hosted models (e.g., those provided by Together, Groq, OpenAI, and other services), providing the flexibility to choose the most suitable option for a given task.
 
 Key features of quallm include:
 
@@ -38,7 +40,7 @@ These instructions will create a new conda environment with Python 3.10 and inst
 ollama pull phi3.5
 ```
 
-If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. The easiest way to use a cloud provider will be to initialize a client with `LLMClient.from_litellm()`.
+If using cloud-hosted LLMs, you will likely need to create an account and set up an API key with your chosen provider. The easiest way to use a cloud provider will be to initialize a client with `LLMClient.from_litellm()`, which allows you to connect to a variety of cloud providers using a single interface (see demonstration below). Ensure you have set your API keys as environment variables (e.g., a `.env` file with `OPENAI_API_KEY`, `GEMINI_API_KEY`) as required by your chosen provider. Refer to your provider's documentation for details. If you are unfamiliar with environment variables, see [this guide](https://www.datacamp.com/tutorial/python-environment-variables).
 
 ## Usage
 
@@ -48,29 +50,33 @@ Here are some basic examples of how to use quallm:
 
 ### Setting up and testing an LLM
 
-An LLM (or rater) is configured with the `LLMClient` class (which is built around Instructor's `client.Instructor` class). In the example below, we use a locally-hosted LLM (Phi-3.5, a 3.8B parameter model released by Microsoft in August 2024) but the same class can be used to configure cloud-hosted LLMs (with some additional inputs). Once your LLM is instantiated, you can perfrom a simple test to ensure it is working as expected. The test method takes an optional question argument; you can probably guess the default.
+An LLM (or rater) is configured with the `LLMClient` class (which is built around Instructor's `client.Instructor` class). In the example below, we use a locally-hosted LLM (Phi-3.5, a 3.8B parameter model released by Microsoft in August 2024) but the same class can be used to configure cloud-hosted LLMs (with some additional inputs). Once your LLM is instantiated, you can perfrom a simple test using the `test()` method to ensure it is working as expected (the test method sends a simple question to the LLM and prints the response). The test method takes an optional question argument; you can probably guess the default.
 
 ```python
 from quallm import LLMClient
 
+# Initialize an LLM client to use a local Phi-3.5 model
+# This assumes you have the model set up through Ollama
 llm = LLMClient(language_model="phi3.5")
 llm.test()
 # Output:
 # 'Hot dogs are technically considered sandwiches as they consist of meat between slices of bread.'
 ```
 
-If using a cloud-hosted LLM, you can specify the model using `LLMClient.from_litellm()`. Assuming your API key is set in your environment, you can use the following code to configure a cloud-hosted LLM:
+If using a cloud-hosted LLM, you can specify the model using `LLMClient.from_litellm()`. Assuming your API key is set in your environment (e.g., in a `.env` file), you can use the following code to configure a cloud-hosted LLM:
 
 ```python
 from quallm import LLMClient
 
-# With OpenAI
+# With OpenAI via the Litellm API
+# This assumes you have your OpenAI API key set in your environment
 llm = LLMClient.from_litellm(language_model="openai/gpt-4o")
 llm.test()
 # Output:
 # "A hot dog is a sandwich because it's meat in bread."
 
 # With Gemini, at a higher temperature
+# This also assumes you have your Gemini API key set in your environment
 llm = LLMClient.from_litellm(language_model="gemini/gemini-2.0-flash", temperature=2.0)
 llm.test()
 # Output:
@@ -81,7 +87,7 @@ For more information on providers supported by LiteLLM, see the [LiteLLM documen
 
 ### Using a pre-existing task
 
-Simple tasks such as single-label classification or sentiment analysis can be performed with (and easily adapted from) pre-existing tasks[^1]. In the example below, we use a relatively small local LLM (Phi-3.5), which will likely work on most consumer devices. In this task, we ask the LLM to classify three texts, using a pre-configured sentiment analysis task (an instance of `Task`), which returns a sentiment classification (one of five categories), along with an explanation and confidence rating.
+Simple tasks such as single-label classification or sentiment analysis can be performed with (and easily adapted from) pre-existing tasks. In the example below, we use a relatively small local LLM (Phi-3.5), which will likely work on most consumer devices. In this task, we ask the LLM to classify three texts, using a pre-configured sentiment analysis task (i.e., `SentimentAnalysisTask`, which is a specific type - technically a _subclass_ - of `Task`), which returns a sentiment classification (one of five categories), along with an explanation and confidence rating.
 
 ```python
 from quallm import LLMClient, Dataset, Predictor
@@ -109,11 +115,13 @@ print(expanded_results)
 # 2  The text expresses a strong negative emotion t...          95  negative
 ```
 
-[^1]: Although pre-defined tasks *do* come with pre-written prompt templates, these are primarily for demonstration purposes. Users are advised to tailor prompts to their specific use cases, as the default prompts may be subject to change, and are unlikely to be optimal for your given combination of task, LLM, and dataset.
+Although pre-defined tasks *do* come with pre-written prompt templates, be aware that these are primarily for demonstration purposes. Users are advised to tailor tasks and prompts to their specific use cases, as the default prompts may be subject to change, and are unlikely to be optimal for your given combination of task, LLM, and dataset (the same prompt may work well for one LLM but not another).
 
 ### Defining a new task
 
-Aribtrary tasks can also be defined using a `TaskConfig` with (at minimum) a Pydantic model, and system and user prompt template. In the example below, we define a trivial task: The response model (i.e., the thing the LLM is tasked with generating) is a list of strings on a given topic (the `ListResponse` Pydantic model). The prompt template (in the definition of `task_config`) is a barebones template with a placeholder for the topic (which is the datapoint or observation which is piped into the prompt template at inference time). In this case, the "data" are two observations: "ethical precepts" and "moral transgressions". As instructed, the LLM returns a lists of both.
+Aribtrary tasks can also be defined using a `TaskConfig` with (at minimum) a Pydantic model describing the response format, and system and user prompt template (into which the data will be piped at inference time).
+
+In the example below, we define a trivial task: The response model (i.e., the thing the LLM is tasked with generating) is a list of strings on a given topic (the `ListResponse` Pydantic model). The prompt template (in the definition of `task_config`) is a barebones template with a placeholder for the topic (which is the datapoint or observation which is piped into the prompt template at inference time). In this case, the "data" are two observations: "ethical precepts" and "moral transgressions". As instructed, the LLM returns a lists of both.
 
 ```python
 from pydantic import BaseModel, Field
@@ -131,9 +139,9 @@ task_config = TaskConfig(
 )
 
 data = ["ethical precepts", "moral transgressions"]
-llm_client = LLMClient(language_model="phi3.5")
+llm = LLMClient(language_model="phi3.5")
 list_generation_task = Task.from_config(task_config)
-predictor = Predictor(task=list_generation_task, raters=llm_client)
+predictor = Predictor(task=list_generation_task, raters=llm)
 prediction = predictor.predict(data)
 
 # Print the results
@@ -193,6 +201,10 @@ In some cases, users may want to assign different roles to different raters. For
 
 Note that the content of the role is defined by placeholders in the system (and/or user) prompt template. In this specific example, the role is simply defined by a single placeholder `{role}`, which appears in one location in the system prompt template, but much more complex roles or combinations of instructions can be defined by adding more placeholders to the prompt template (along with corresponding key-value pairs in the role dictionaries for each rater).
 
+In the following example, we define a task that generates a list of items based on a topic, and assign different (unimaginative) roles to two different raters (one rater is instructed to generate items beginning with the letter A, while the other is instructed to generate items beginning with the letter B). In this example, we assign roles to two instances of the same language model, but in practice, roles can be assigned to different language models as well (depending on one's use case).
+
+When we inspect the results using `prediction.expand()` we see that the two raters (denoted by the `rater` column) have adhered to their respective roles.
+
 ```python
 from pydantic import BaseModel, Field
 from typing import List
@@ -207,11 +219,13 @@ task_config = TaskConfig(
     system_template="{role}. Generate a short list based on the topic provided.",
     user_template="Topic: {topic}",
     data_args="topic",
-    role_args="role",
+    role_args="role", # This is the new argument for the role
 )
 
 data = ["foods", "inanimate objects"]
-llm = llm_a = LLMClient(language_model="olmo2")
+llm = LLMClient(language_model="olmo2")
+# When assigning roles, we can pass a list of dictionaries (one for each rater)
+# Each dictionary should have keys that match the Task role_args, and values that are the role descriptions which will be piped into the prompt
 roles = [{"role": "You are a helpful assistant who only responds with things beginning with the letter A"},
          {"role": "You are a helpful assistant who only responds with things beginning with the letter B"}]
 rater_list = llm.assign_roles(roles)
