@@ -328,6 +328,21 @@ print(results)
 # 3 inanimate objects   r2     bottle
 ```
 
+## Citation
+
+If you use `quallm` in your research or find it useful, please consider citing it as follows:
+
+```bibtex
+@software{quallm,
+  author       = {Crone, Damien L.},
+  title        = {Quallm: A python library for LLM-assisted content coding},
+  year         = {2024},
+  publisher    = {GitHub},
+  journal      = {GitHub repository},
+  url          = {https://github.com/damiencrone/quallm}
+}
+```
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE.txt).
