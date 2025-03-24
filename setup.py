@@ -19,7 +19,11 @@ setup(
         'instructor',
         'futures',
         'pandas',
-        'numpy'
+        'numpy',
+        'litellm',
+        'ollama',
+        'umap-learn',
+        'hdbscan'
     ],
     classifiers=[
         'Development Status :: 3 - Alpha',

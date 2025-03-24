@@ -5,3 +5,5 @@ futures
 pandas
 numpy
 litellm
+umap
+hdbscan
