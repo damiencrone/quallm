@@ -119,7 +119,7 @@ class Prediction(np.ndarray):
         
         return result
     
-    def expand(self, suffix: list = None, rater_labels: list = None, data=None, format: str = None, explode: str = None):
+    def expand(self, rater_labels: list = None, data=None, format: str = None, explode: str = None):
         """
         Convert the prediction array into a pandas DataFrame.
 
@@ -127,7 +127,6 @@ class Prediction(np.ndarray):
         all attributes of the response model for each rater.
 
         Args:
-            suffix (list, optional): DEPRECATED. Use rater_labels instead.
             rater_labels (list, optional): List of labels to use for each rater's columns.
                                         If None, uses '_r1', '_r2', etc. Defaults to None.
             data (array-like or pandas.DataFrame, optional): Additional data to include in the DataFrame.
@@ -143,7 +142,7 @@ class Prediction(np.ndarray):
         Returns:
             pandas.DataFrame: A DataFrame containing expanded prediction data. The structure depends on the format:
                 - In 'wide' format: Each rater has a column for each attribute in the response model.
-                If there's only one rater, no suffix is added to the column names.
+                If there's only one rater, no rater labels are added to the column names.
                 - In 'long' format: Contains one row per observation per rater, with an additional 'rater' column.
                 If an 'explode' argument is provided, the DataFrame will contain one row per item in each 
                 exploded list *per observation* *per rater*.
@@ -161,12 +160,7 @@ class Prediction(np.ndarray):
         data_is_dataframe = False
         
         # Perform some input validation
-        # Validate suffix and rater_labels
-        if suffix is not None:
-            warnings.warn("The 'suffix' argument is deprecated. Use 'rater_labels' instead.", DeprecationWarning, stacklevel=2)
-            if rater_labels is not None:
-                raise ValueError("Cannot provide both 'suffix' and 'rater_labels'. Use 'rater_labels' only.")
-            rater_labels = suffix
+        # Validate rater_labels
         if rater_labels is not None:
             if not isinstance(rater_labels, list):
                 raise ValueError(f"rater_labels must be a list, not {type(rater_labels)}.")
