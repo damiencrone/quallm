@@ -98,11 +98,23 @@ class Prediction(np.ndarray):
         else:
             raise TypeError(f"Unexpected type for output data: {type(output_data)}")
         
-        if not flatten:
-            result = result.reshape(1, -1)
+        # Only reshape if a specific index has been provided.
+        if indices is not None:
+            if not flatten:
+                # If a single item was selected, reshape accordingly
+                if isinstance(indices, int):
+                    result = result.reshape(1, -1)
+                elif isinstance(indices, tuple):
+                    # Depending on tuple length we assume a single item is selected.
+                    result = result.reshape(1, 1)
         else:
-            is_1d = len(result) == 1 or min(result.shape) == 1
-            if flatten and is_1d:
+            # If indices is None, leave the result's shape intact.
+            pass
+
+        if flatten:
+            # Only flatten if the result is effectively one-dimensional.
+            is_1d = (result.ndim == 1) or (min(result.shape) == 1)
+            if is_1d:
                 result = result.flatten()
         
         return result
@@ -195,7 +207,7 @@ class Prediction(np.ndarray):
             if format == 'long':
                 rater_result['rater'] = rater_labels[rater]
             for attr in attributes:
-                values = self.get(attr)
+                values = self.get(attr, flatten=False)
                 if self.n_raters > 1:
                     if format == 'wide':
                         column_name = f"{attr}_{rater_labels[rater]}"

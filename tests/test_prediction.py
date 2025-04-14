@@ -336,3 +336,36 @@ def test_expand_with_explode(test_case, response_model):
     expanded_explode = prediction.expand(explode='items')
     expanded_explode = expanded_explode.drop(columns='rater')
     pd.testing.assert_frame_equal(expanded_explode, data['expected_output'])
+
+
+# Tests for expand with multiple raters and single datapoint
+class AnswerResponse(BaseModel):
+    answer: str = Field(description="The answer to the question")
+
+QA_TASK_CONFIG = TaskConfig(
+    response_model=AnswerResponse,
+    system_template="Answer the question.",
+    user_template="Question: {question}",
+    data_args="question"
+)
+
+qa_task = Task.from_config(QA_TASK_CONFIG)
+llm = LLMClient()
+dataset = Dataset("What is 2+2?", data_args="question")
+
+predictor_multi = Predictor(raters=[llm, llm], task=qa_task)
+prediction = predictor_multi.predict(dataset)
+
+def test_expand_single_datapoint_qa_multi_rater():
+    expanded = prediction.expand()
+    assert isinstance(expanded, pd.DataFrame)
+    assert expanded.shape[0] == 1
+    
+    expected_columns = ["answer_r1", "answer_r2"]
+    for col in expected_columns:
+        assert col in expanded.columns
+    
+    for col in expected_columns:
+        value = expanded.loc[0, col]
+        assert isinstance(value, str)
+        assert len(value) > 0
