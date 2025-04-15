@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from typing import Union, List, Optional
+from .embedding_client import EmbeddingClient
 import warnings
 
 
@@ -119,7 +121,13 @@ class Prediction(np.ndarray):
         
         return result
     
-    def expand(self, rater_labels: list = None, data=None, format: str = None, explode: str = None):
+    def expand(self,
+               rater_labels: list = None,
+               data=None,
+               format: str = None,
+               explode: str = None,
+               sort_by: Optional[Union[str, List[str]]] = None,
+               embedding_client: Optional[EmbeddingClient] = None) -> pd.DataFrame:
         """
         Convert the prediction array into a pandas DataFrame.
 
@@ -191,11 +199,34 @@ class Prediction(np.ndarray):
                 raise ValueError(f"Cannot explode on '{explode}' because it is already a column in the provided data.")
             if not self.task.is_attribute_list(explode):
                 raise ValueError(f"Cannot explode on '{explode}' because it is not a list-like attribute.")
+            
+        rater_result_list = self._construct_rater_result_list(attributes, format, rater_labels)
 
-        # Initialize list to store results for each rater
+        # Prepend data (if provided)
+        if data is not None:
+            rater_result_list = self._prepend_data_to_rater_responses(rater_result_list, data, format)
+
+        # Construct DataFrame
+        if format == 'wide':
+            result = pd.DataFrame({k: v for d in rater_result_list for k, v in d.items()})
+        elif format == 'long':
+            result = pd.DataFrame([
+                {**rater_result, **{k: v[i] for k, v in rater_result.items() if isinstance(v, (list, np.ndarray))}}
+                for rater_result in rater_result_list
+                for i in range(len(next(iter([v for v in rater_result.values() if isinstance(v, (list, np.ndarray))]))))
+            ])
+        
+        # Post-process results
+        if explode is not None:
+            result = self._explode_results(result, explode)
+        if sort_by is not None:
+            result = self._sort_expanded_results(result, sort_by, embedding_client)
+        
+        return result
+    
+    def _construct_rater_result_list(self, attributes, format, rater_labels) -> List[dict]:
+        """Constructs a list containing all LLM responses for each rater."""
         rater_result_list = []
-
-        # Extract LLM responses
         for rater in range(self.n_raters):
             rater_result = {}
             if format == 'long':
@@ -210,36 +241,10 @@ class Prediction(np.ndarray):
                     rater_result[column_name] = values[:, rater]
                 else:
                     rater_result[attr] = values.flatten()
-            
             rater_result_list.append(rater_result)
-
-        # Prepend data (if provided)
-        if data is not None:
-            rater_result_list = self._prepend_data_to_rater_responses(rater_result_list, data, format)
-
-        # Construct final DataFrame
-        if format == 'wide':
-            result = pd.DataFrame({k: v for d in rater_result_list for k, v in d.items()})
-        elif format == 'long':
-            result = pd.DataFrame([
-                {**rater_result, **{k: v[i] for k, v in rater_result.items() if isinstance(v, (list, np.ndarray))}}
-                for rater_result in rater_result_list
-                for i in range(len(next(iter([v for v in rater_result.values() if isinstance(v, (list, np.ndarray))]))))
-            ])
-        
-        # Explode list-like attribute (if requested)
-        if explode is not None:
-            result = result.explode(explode)
-            explode_is_list_of_pydantic_models = self.task.is_attribute_list_of_pydantic_models(explode)
-            if explode_is_list_of_pydantic_models:
-                model_fields = self.task.response_model.model_fields[explode].annotation.__args__[0].model_fields.keys()
-                for field in model_fields:
-                    result[field] = result[explode].apply(lambda x: getattr(x, field, np.nan) if not pd.isna(x) else np.nan)
-                result = result.drop(columns=[explode])
-        
-        return result
+        return rater_result_list
     
-    def _prepend_data_to_rater_responses(self, rater_result_list, data, format):
+    def _prepend_data_to_rater_responses(self, rater_result_list: List[dict], data, format: str):
         """
         Prepends data for each rater's result based on the specified format.
         
@@ -262,6 +267,26 @@ class Prediction(np.ndarray):
             new_result.update(rater_result_list[idx])
             rater_result_list[idx] = new_result
         return rater_result_list
+    
+    def _explode_results(self, result: pd.DataFrame, explode: str) -> pd.DataFrame:
+        result = result.explode(explode)
+        explode_is_list_of_pydantic_models = self.task.is_attribute_list_of_pydantic_models(explode)
+        if explode_is_list_of_pydantic_models:
+            model_fields = self.task.response_model.model_fields[explode].annotation.__args__[0].model_fields.keys()
+            for field in model_fields:
+                result[field] = result[explode].apply(lambda x: getattr(x, field, np.nan) if not pd.isna(x) else np.nan)
+            result = result.drop(columns=[explode])
+        return result
+    
+    def _sort_expanded_results(self,
+                               result: pd.DataFrame,
+                               sort_by: Union[str, List[str]],
+                               embedding_client: EmbeddingClient) -> pd.DataFrame:
+        """Performs semantic sorting on the expanded results based on the specified column(s)."""
+        idx_df = embedding_client.sort(result[[sort_by]])
+        # TODO: use idx_df to sort results
+        raise NotImplementedError("The _sort_expanded_results method has not been implemented yet.")
+        return result
 
     def code_reliability(self):
         # TODO (later): Compute reliability metrics based on the results when n_raters > 1
