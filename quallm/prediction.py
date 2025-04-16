@@ -146,6 +146,8 @@ class Prediction(np.ndarray):
                                     rows. If the attribute is a list of Pydantic models, additional 
                                     columns will be created for each field in the models, and the original
                                     'explode' column will be dropped. Defaults to None.
+            sort_by: Column name(s) to sort by semantically using embeddings. Defaults to None.
+            embedding_client: EmbeddingClient to use for sorting by semantic similarity (if sort_by is specified). Defaults to None.
 
         Returns:
             pandas.DataFrame: A DataFrame containing expanded prediction data. The structure depends on the format:
@@ -156,6 +158,8 @@ class Prediction(np.ndarray):
                 exploded list *per observation* *per rater*.
                 - If the optional data arugment is provided, the DataFrame will contain the additional data columns
                 prepended to the result.
+                - If the optional sort_by argument is provided, the DataFrame will be sorted by the specified column(s),
+                such that semantically similar rows are grouped together.
 
         Raises:
             ValueError: If input arguments are invalid (e.g., `rater_labels` is not a list,
