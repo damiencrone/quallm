@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='quallm',
-    version='0.5.0',
+    version='0.6.0',
     author='Damien Crone',
     author_email='damien.crone@gmail.com',
     description='A Python library for LLM-assisted content analysis tasks',
