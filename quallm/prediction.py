@@ -220,6 +220,8 @@ class Prediction(np.ndarray):
         if explode is not None:
             result = self._explode_results(result, explode)
         if sort_by is not None:
+            if embedding_client is None:
+                embedding_client = EmbeddingClient()  # Use default client if not provided
             result = self._sort_expanded_results(result, sort_by, embedding_client)
         
         return result
@@ -269,7 +271,8 @@ class Prediction(np.ndarray):
         return rater_result_list
     
     def _explode_results(self, result: pd.DataFrame, explode: str) -> pd.DataFrame:
-        result = result.explode(explode)
+        result.insert(0, 'obs_num', result.index)
+        result = result.explode(explode, ignore_index=True)
         explode_is_list_of_pydantic_models = self.task.is_attribute_list_of_pydantic_models(explode)
         if explode_is_list_of_pydantic_models:
             model_fields = self.task.response_model.model_fields[explode].annotation.__args__[0].model_fields.keys()
@@ -283,9 +286,16 @@ class Prediction(np.ndarray):
                                sort_by: Union[str, List[str]],
                                embedding_client: EmbeddingClient) -> pd.DataFrame:
         """Performs semantic sorting on the expanded results based on the specified column(s)."""
-        idx_df = embedding_client.sort(result[[sort_by]])
-        # TODO: use idx_df to sort results
-        raise NotImplementedError("The _sort_expanded_results method has not been implemented yet.")
+        if isinstance(sort_by, str):
+            sort_by = [sort_by]
+
+        # Validate sort_by values
+        missing_cols = [col for col in sort_by if col not in result.columns]
+        if missing_cols:
+            raise ValueError(f"Columns not found in DataFrame: {missing_cols}")
+        
+        idx_df = embedding_client.sort(result[sort_by])
+        result = result.loc[idx_df.original_index]
         return result
 
     def code_reliability(self):

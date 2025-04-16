@@ -9,15 +9,15 @@
     ]
   },
   "expected_output": {
-    "index": [0, 0, 1, 2, 2, 3, 3],
+    "index": [0, 1, 2, 3, 4, 5, 6],
     "data": [
-      {"items": "apple"},
-      {"items": "banana"},
-      {"items": null},
-      {"items": "carrot"},
-      {"items": "potato"},
-      {"items": "cat"},
-      {"items": "dog"}
+      {"obs_num": 0, "items": "apple"},
+      {"obs_num": 0, "items": "banana"},
+      {"obs_num": 1, "items": null},
+      {"obs_num": 2, "items": "carrot"},
+      {"obs_num": 2, "items": "potato"},
+      {"obs_num": 3, "items": "cat"},
+      {"obs_num": 3, "items": "dog"}
     ]
   }
 }

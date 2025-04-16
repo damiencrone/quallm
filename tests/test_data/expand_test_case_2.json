@@ -9,15 +9,15 @@
     ]
   },
   "expected_output": {
-    "index": [0, 0, 1, 2, 2, 3, 3],
+    "index": [0, 1, 2, 3, 4, 5, 6],
     "data": [
-      {"name": "apple", "description": "A red fruit"},
-      {"name": "banana", "description": "A yellow fruit"},
-      {"name": null, "description": null},
-      {"name": "carrot", "description": "An orange vegetable"},
-      {"name": "potato", "description": "A starchy vegetable"},
-      {"name": "cat", "description": "A furry pet"},
-      {"name": "dog", "description": "A loyal pet"}
+      {"obs_num": 0, "name": "apple", "description": "A red fruit"},
+      {"obs_num": 0, "name": "banana", "description": "A yellow fruit"},
+      {"obs_num": 1, "name": null, "description": null},
+      {"obs_num": 2, "name": "carrot", "description": "An orange vegetable"},
+      {"obs_num": 2, "name": "potato", "description": "A starchy vegetable"},
+      {"obs_num": 3, "name": "cat", "description": "A furry pet"},
+      {"obs_num": 3, "name": "dog", "description": "A loyal pet"}
     ]
   }
 }
