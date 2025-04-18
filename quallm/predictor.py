@@ -30,6 +30,7 @@ class InMemoryLogHandler(logging.Handler):
         self._lock = threading.Lock()
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Format the record and append it to the in‑memory log records safely."""
         try:
             raw = self.formatter.format(record)
             entry = {
@@ -54,21 +55,25 @@ class Predictor:
     A pipeline for performing LLM-assisted content analysis tasks.
 
     This class manages the process of applying a specific content analysis task
-    to a dataset using one or more language models (raters).
+    to a dataset using one or more language models (raters), while capturing
+    detailed, thread-safe log records in memory. Users can inspect these logs
+    via the `logs` attribute, echo them to the console with `echo` and
+    `set_echo_level()`, and export them using `print_logs()`, `clear_logs()`,
+    `logs_df()`, or `dump_logs()`.
 
     Attributes:
         raters (List[LLMClient]): The language model clients to be used for predictions.
         n_raters (int): The number of raters (language models) being used (inferred from raters).
         task (Task): The content analysis task to be performed.
+        logs (List[dict]): In-memory list of structured log entries captured during runs.
+        run_timestamps (List[dict]): Start/end timestamps and durations for each predict() call.
 
     Args:
         task (Task): The content analysis task to be performed.
         raters (Union[LLMClient, List[LLMClient]]): One or more language model clients.
             Defaults to a single LLMClient instance.
-
-    Note:
-        This class is designed to work with various content analysis tasks and
-        can utilize multiple language models for each prediction task.
+        echo (bool): Whether to print logs to stdout as they occur. Defaults to False.
+        echo_level (int): Logging level for console echo. Defaults to logging.INFO.
     """
     def __init__(self,
                  task: Task,
@@ -164,14 +169,14 @@ class Predictor:
                 echo: bool = False
                 ) -> Prediction:
         """
-        Perform predictions on the given data using the configured task and raters.
+        Perform predictions on the given data using the configured task, raters, and in-memory logging.
 
         This method processes the input data, applies the content analysis task using
-        the specified language models, and returns the predictions.
-        If no existing predictions are provided, performs predictions for all observations. 
-        If an existing Prediction object is provided via the predictions argument, only 
-        performs predictions for missing (None) values in that object, preserving all 
-        existing predictions.
+        the specified language models, logs each start, completion, error, and
+        summary metrics (duration, successes, failures), and returns the predictions.
+        If no existing Prediction object is provided, a new one is created and all
+        entries are filled. If an existing Prediction object is provided, only missing
+        entries are computed, preserving prior results and logging the resumption.
 
         Args:
             data (Union[str, Dict[str, str], List[str], pd.Series, pd.DataFrame, np.ndarray, List[Dict[str, str]]):
@@ -184,6 +189,8 @@ class Predictor:
             max_workers (int, optional): The maximum number of worker threads to use
                 for parallel processing. If 1, processing is done sequentially.
                 Defaults to 1.
+            echo (bool, optional): Whether to enable console echo of logs during this call.
+                Overrides the instance-level echo setting for this run. Defaults to False.
 
         Returns:
             Prediction: A Prediction object containing the results of the content analysis.
@@ -191,13 +198,15 @@ class Predictor:
                 missing values filled in.
 
         Raises:
-            ValueError: If the input data format is unsupported or if there's a mismatch
-                between the data and the task requirements.
-            AssertionError: If the provided predictions object is invalid or incompatible.
+            ValueError: If the input data format is unsupported.
+            AssertionError: If the provided predictions object is invalid, has no missing values,
+                or its shape doesn’t match the data and raters.
 
         Note:
             This method can handle both single-item and batch predictions. It also
             supports parallel processing for improved performance with larger datasets.
+            Logs for each step (start, per-item debug, errors, run summary) are captured
+            in-memory and can be accessed via the `logs` attribute or exported as needed.
         """
         self._set_echo(echo)
         run_num = len(self.run_timestamps)
@@ -240,6 +249,7 @@ class Predictor:
     
     
     def _log_completion(self, start_time, run_num, predictions):
+        """Log the completion metrics (duration, successes, failures) of a prediction run."""
         end_time = dt.datetime.now()
         self.run_timestamps[run_num-1]["end"] = end_time.isoformat()
         run_duration = (end_time - start_time).total_seconds()
