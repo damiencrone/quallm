@@ -328,9 +328,9 @@ print(results)
 # 3 inanimate objects   r2     bottle
 ```
 
-### Debugging
+### Debugging and storing session information
 
-For the purposes of debugging, the `Predictor` class stores a log of prediction events, along with other metadata, in a `logs` attribute. The log can also be viewed as a pandas DataFrame for further analysis. You can access the logs as follows:
+For the purposes of debugging and storing session information, the `Predictor` class stores a log of prediction events, along with other metadata, in a `logs` attribute. The log can also be viewed as a pandas DataFrame for further analysis. You can access the logs as follows:
 
 ```python
 from pydantic import BaseModel, Field
