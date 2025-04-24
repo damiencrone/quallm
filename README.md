@@ -328,6 +328,48 @@ print(results)
 # 3 inanimate objects   r2     bottle
 ```
 
+### Debugging
+
+For the purposes of debugging, the `Predictor` class stores a log of prediction events, along with other metadata, in a `logs` attribute. The log can also be viewed as a pandas DataFrame for further analysis. You can access the logs as follows:
+
+```python
+from pydantic import BaseModel, Field
+from typing import List
+from quallm.tasks import Task, TaskConfig
+from quallm import LLMClient, Predictor
+
+class ListResponse(BaseModel):
+    items: List[str] = Field(description="A list of items relating to a topic")
+
+task_config = TaskConfig(
+    response_model=ListResponse,
+    system_template="Generate a short list based on the topic provided.",
+    user_template="Topic: {topic}"
+)
+
+data = ["nouns", "verbs"]
+llm = LLMClient(language_model="olmo2", temperature=0.1)
+list_generation_task = Task.from_config(task_config)
+predictor = Predictor(task=list_generation_task, raters=llm)
+prediction = predictor.predict(data)
+
+# Print the logs:
+predictor.print_logs()
+# Output:
+# 2025-04-24T17:05:41-0400|INFO|Initialized Predictor. quallm version: 0.7.0
+# 2025-04-24T17:05:41-0400|INFO|predict() called. Run number: 0. n_raters: 1. max_workers: 1.
+# 2025-04-24T17:05:41-0400|INFO|Rater 0: olmo2. Temperature: 0.1.
+# 2025-04-24T17:05:41-0400|DEBUG|Index: (0, 0). Beginning prediction.
+# 2025-04-24T17:05:42-0400|DEBUG|Index: (0, 0). Returning prediction. Length: 5. Duration: 1.211s.
+# 2025-04-24T17:05:42-0400|DEBUG|Index: (1, 0). Beginning prediction.
+# 2025-04-24T17:05:47-0400|DEBUG|Index: (1, 0). Returning prediction. Length: 37. Duration: 4.626s.
+# 2025-04-24T17:05:47-0400|INFO|predict() finished in 5.842s
+# 2025-04-24T17:05:47-0400|INFO|predict() returned 2 successful predictions and 0 missing predictions out of 2 total predictions
+
+# To store the logs in a DataFrame:
+log_df = predictor.logs_df()
+```
+
 ## Citation
 
 If you use `quallm` in your research or find it useful, please consider citing it as follows:
