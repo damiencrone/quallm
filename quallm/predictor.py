@@ -281,6 +281,11 @@ class Predictor:
         n_pred = predictions.size
         n_success = np.sum(predictions != None)
         n_missing = np.sum(predictions == None)
+        if n_missing > 0:
+            none_counts = np.sum(predictions == None, axis=0)
+            for col_idx, n in enumerate(none_counts):
+                if n > 0:
+                    self.logger.warning(f"predict() returned {n} missing predictions for rater {col_idx}")
         self.logger.info(f"predict() returned {n_success} successful predictions and {n_missing} missing predictions out of {n_pred} total predictions")
     
     
