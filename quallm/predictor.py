@@ -281,12 +281,13 @@ class Predictor:
         n_pred = predictions.size
         n_success = np.sum(predictions != None)
         n_missing = np.sum(predictions == None)
+        self.logger.info(f"predict() returned {n_success} successful predictions and {n_missing} missing predictions out of {n_pred} total predictions")
         if n_missing > 0:
             none_counts = np.sum(predictions == None, axis=0)
-            for col_idx, n in enumerate(none_counts):
+            for rater_num, n in enumerate(none_counts):
                 if n > 0:
-                    self.logger.warning(f"predict() returned {n} missing predictions for rater {col_idx}")
-        self.logger.info(f"predict() returned {n_success} successful predictions and {n_missing} missing predictions out of {n_pred} total predictions")
+                    llm = self.raters[rater_num]
+                    self.logger.warning(f"predict() returned {n} missing predictions for rater {rater_num} ({llm.language_model} @ temp={llm.temperature}).")
     
     
     def validate_existing_predictions(self, predictions: Prediction, standardized_data: Dataset):
