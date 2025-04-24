@@ -14,6 +14,7 @@ import datetime as dt
 import threading
 import sys
 import logging
+from tqdm import tqdm
 
 
 class InMemoryLogHandler(logging.Handler):
@@ -112,6 +113,8 @@ class Predictor:
     
     def _set_echo(self, value: bool = False):
         """Enable or disable echoing of logs to the console"""
+        if value is None:
+            return
         self.echo = value
         if value:
             # Add a console handler if it doesn't exist
@@ -166,7 +169,7 @@ class Predictor:
                 data: Union[str, Dict[str, str], List[str], pd.Series, pd.DataFrame, np.ndarray, List[Dict[str, str]]],
                 predictions: Prediction = None,
                 max_workers: int = 1,
-                echo: bool = False
+                echo: bool = None
                 ) -> Prediction:
         """
         Perform predictions on the given data using the configured task, raters, and in-memory logging.
@@ -190,7 +193,7 @@ class Predictor:
                 for parallel processing. If 1, processing is done sequentially.
                 Defaults to 1.
             echo (bool, optional): Whether to enable console echo of logs during this call.
-                Overrides the instance-level echo setting for this run. Defaults to False.
+                Overrides the instance-level echo setting for this run. Defaults to None.
 
         Returns:
             Prediction: A Prediction object containing the results of the content analysis.
@@ -211,6 +214,8 @@ class Predictor:
         self._set_echo(echo)
         run_num = len(self.run_timestamps)
         self.logger.info(f"predict() called. Run number: {run_num}. n_raters: {self.n_raters}. max_workers: {max_workers}.")
+        for rater_num, llm in enumerate(self.raters):
+            self.logger.info(f"Rater {rater_num}: {llm.language_model}. Temperature: {llm.temperature}.")
         start_time = dt.datetime.now()
         self.run_timestamps.append({"start": start_time.isoformat()})
         if not isinstance(data, Dataset):
@@ -235,11 +240,29 @@ class Predictor:
                     formatted_prompt = self.task.prompt.insert_role_and_data(**role_and_data_args)
                     tasks.append(((i, j), language_model, formatted_prompt))
         # Execute predictions
+        results = []
+        total = len(tasks)
         if max_workers > 1:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                results = list(executor.map(self.predict_single, tasks))
+                # submit all futures up‐front
+                futures = {executor.submit(self.predict_single, t): t for t in tasks}
+                # as each future completes, update tqdm
+                for fut in tqdm(concurrent.futures.as_completed(futures),
+                                total=total,
+                                desc="Predicting",
+                                unit="task",
+                                disable=False,
+                                file=sys.stdout):
+                    results.append(fut.result())
         else:
-            results = [self.predict_single(task) for task in tasks]
+            # simple loop, just wrap tasks in tqdm
+            for task in tqdm(tasks,
+                             total=total,
+                             desc="Predicting",
+                             unit="task",
+                             disable=False,
+                             file=sys.stdout):
+                results.append(self.predict_single(task))
         # Fill in predictions
         for index, result in results:
             if result is not None:
