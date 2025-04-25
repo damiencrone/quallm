@@ -155,8 +155,7 @@ class Predictor:
             )
             end_time = dt.datetime.now()
             pred_time = (end_time - start_time).total_seconds()
-            length = len(getattr(response, self.task.output_attribute))
-            self.logger.debug(f"Index: {index}. Returning prediction. Length: {length}. Duration: {pred_time:.3f}s.")
+            self.logger.debug(f"Index: {index}. Returning prediction. Duration: {pred_time:.3f}s.")
             return (index, {'response': [response]})
         except Exception as e:
             end_time = dt.datetime.now()
