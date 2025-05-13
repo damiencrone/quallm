@@ -57,12 +57,12 @@ class EmbeddingClient:
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-    def embed(self, texts: List[str], allow_na: bool = False) -> List[List[float]]:
+    def embed(self, texts: Union[str, List[str], pd.Series], allow_na: bool = False) -> List[List[float]]:
         """
         Processes a batch of texts to generate their embeddings using the selected provider.
 
         Args:
-            texts: A list of text strings for which embeddings are requested.
+            texts: A list of text strings for which embeddings are requested (or a single string or a pandas Series).
             allow_na: Boolean flag indicating whether to allow NA values. 
                       If True, NaN or None values within texts are replaced with an empty string; 
                       if False, such values may cause errors.
