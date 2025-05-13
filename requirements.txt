@@ -5,5 +5,6 @@ futures
 pandas
 numpy
 litellm
+ollama
 umap-learn
 hdbscan
