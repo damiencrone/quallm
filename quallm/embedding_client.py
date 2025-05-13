@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Union
 import ollama
 from litellm import embedding as litellm_embedding
 import numpy as np
@@ -71,12 +71,56 @@ class EmbeddingClient:
         Returns:
             A list of embeddings, where each embedding is a list of floats.
         """
-        # Handle pandas Series/Column
-        if isinstance(texts, pd.Series):
-            if allow_na: # Convert NaN/None values to empty strings
-                texts = texts.fillna('')
+        # Validate input
+        # Coerce texts to List[str] if it's a single string or a pandas Series
+        if isinstance(texts, str):
+            texts = [texts]  # texts is now List[str]
+        elif isinstance(texts, pd.Series):
+            # If not allowing NAs, validate that the Series has no NAs
+            if not allow_na and texts.isnull().any():
+                raise ValueError("Input pandas Series contains NA/NaN values and 'allow_na' is False.")
+            # Convert Series to list; Items retain their types (e.g., str, None, np.nan, int, float)
             texts = texts.tolist()
-        return self.embedding_provider.embed(texts)
+        elif not isinstance(texts, list):
+            # If not a string, not a Series, and not a list, it's an unsupported type
+            raise TypeError(
+                f"Input 'texts' must be a string, list, or pandas Series. Got {type(texts)}."
+            )
+
+        # Validate the contents of the 'texts' list based on 'allow_na'
+        if not allow_na:
+            # If NAs are not allowed, every item in the list must be a string
+            for i, item in enumerate(texts):
+                if not isinstance(item, str):
+                    if item is None or (isinstance(item, float) and np.isnan(item)):
+                        raise ValueError(
+                            f"Input list contains an NA value ('{item}') at index {i}, but 'allow_na' is False."
+                        )
+                    raise TypeError(
+                        f"All items in 'texts' must be strings when 'allow_na' is False. "
+                        f"Found item '{item}' (type: {type(item)}) at index {i}."
+                    )
+        else:
+            # If NAs are allowed, items must be string, None, or float (for np.nan)
+            for i, item in enumerate(texts):
+                if not (isinstance(item, str) or item is None or (isinstance(item, float) and np.isnan(item))):
+                    raise TypeError(
+                        f"Input list 'texts' at index {i} contains an item of unsupported type '{type(item)}' ('{item}') "
+                        f"when 'allow_na' is True. Allowed types are string, None, or float (for NaN)."
+                    )
+        if allow_na:
+            processed_texts = []
+            for item in texts:
+                if item is None or (isinstance(item, float) and np.isnan(item)):
+                    processed_texts.append('')
+                else:
+                    processed_texts.append(str(item))
+        else:
+            if any(item is None or (isinstance(item, float) and np.isnan(item)) for item in texts):
+                raise ValueError("Input list contains NA/NaN values and allow_na is False.")
+            processed_texts = [str(item) for item in texts]
+
+        return self.embedding_provider.embed(processed_texts)
     
     def sort(self, data):
         """
@@ -126,8 +170,13 @@ class EmbeddingClient:
             
         return result.reset_index(drop=True)
                 
-    def sort_embeddings(self, embeddings):
+    def sort_embeddings(self, embeddings: Union[List[List[float]], np.ndarray]) -> pd.DataFrame:
         """Sorts embeddings using UMAP and HDBSCAN."""
+        # Validate input
+        if not isinstance(embeddings, (list, np.ndarray)):
+            raise TypeError("Input 'embeddings' must be a list or a NumPy array.")
+        if len(embeddings) == 0:
+            raise ValueError("Input 'embeddings' cannot be empty.")
         
         # Reduce dimensionality with UMAP and cluster using HDBSCAN
         umap_reducer = umap.UMAP(n_components=2, random_state=1234)
