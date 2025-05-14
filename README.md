@@ -328,6 +328,56 @@ print(results)
 # 3 inanimate objects   r2     bottle
 ```
 
+### Getting Feedback on a Task Definition
+
+The `Task` class includes a `feedback()` method that allows you to get an LLM to provide feedback on your task definition. This can be useful for identifying potential issues, ambiguities, or areas for improvement in your system prompts, user prompts, or response model that may otherwise be easy to miss.
+
+To use it, you'll need an instance of your task and one or more `LLMClient` instances to generate the feedback. It's generally recommended to use a more capable model for generating feedback to ensure higher quality and more actionable insights. The `feedback()` method will return a string containing the feedback, and can optionally be saved to a file.
+
+Here's how you might get feedback on a new task definition:
+
+```python
+from pydantic import BaseModel, Field, conint
+from quallm import LLMClient
+from quallm.tasks import Task, TaskConfig
+
+# Define the Pydantic model for the structured response
+class TextAnalysisResponse(BaseModel):
+    main_idea: str = Field(description="A concise summary of the main idea of the text.")
+    sentiment_score: conint(ge=-10, le=10) = Field(
+        description="A sentiment score from -10 (very negative) to +10 (very positive) based on the text."
+    )
+
+# Create a TaskConfig for your new task
+analysis_task_config = TaskConfig(
+    response_model=TextAnalysisResponse,
+    system_template="You are an AI assistant that analyzes text. Your goal is to identify the main idea and assign a sentiment score.",
+    user_template="Please analyze the following text: {input_document}",
+    output_attribute="main_idea"
+)
+
+# Create the Task instance from the configuration
+analysis_task = Task.from_config(analysis_task_config)
+
+# Initialize an LLMClient (or a list of them) to provide the feedback
+# It's often good to use a powerful model for this
+feedback_llm = LLMClient.from_litellm("openai/o4-mini",
+                                      temperature=None) # Note that o4 does not support temperature
+
+# Get feedback on the task definition
+feedback_text = analysis_task.feedback(
+    raters=feedback_llm,
+    context="This sentiment analysis task will be used to classify responses to a survey question.",
+    output_filename="task_feedback.txt"
+)
+
+# Optionally, print the feedback to the console (it's already saved to a file)
+# print(feedback_text)
+
+# Output
+# Feedback saved to task_feedback.txt
+```
+
 ### Debugging and storing session information
 
 For the purposes of debugging and storing session information, the `Predictor` class stores a log of prediction events, along with other metadata, in a `logs` attribute. The log can also be viewed as a pandas DataFrame for further analysis. You can access the logs as follows:
