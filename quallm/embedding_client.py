@@ -199,7 +199,7 @@ class EmbeddingClient:
         return umap_embeddings
 
     def _cluster_embeddings(self,
-                            embeddings_to_cluster: np.ndarray, # Typically UMAP-reduced embeddings
+                            embeddings_to_cluster: np.ndarray, # UMAP-reduced embeddings
                             min_cluster_size: int = 5,
                             min_samples: Optional[int] = None, # Defaults to min_cluster_size in HDBSCAN
                             cluster_metric: str = 'euclidean', # HDBSCAN's distance metric
