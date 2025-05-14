@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import List, Union, Optional
 import ollama
 from litellm import embedding as litellm_embedding
 import numpy as np
@@ -169,6 +169,58 @@ class EmbeddingClient:
             result = order_df
             
         return result.reset_index(drop=True)
+    
+    def _validate_array(self, array: np.ndarray) -> None:
+        """Helper method to validate the type and shape of an input array."""
+        if not isinstance(array, np.ndarray):
+            raise TypeError("Input must be a NumPy array.")
+        if array.ndim != 2:
+            raise ValueError("Input array must be 2-dimensional.")
+        if array.shape[0] == 0:
+            raise ValueError("Input array must have at least one row.")
+
+    def _reduce_dimensions(self,
+                           embeddings_array: np.ndarray,
+                           n_components: int = 2,
+                           n_neighbors: int = 15,
+                           min_dist: float = 0.1,
+                           metric: str = 'euclidean',
+                           random_state: int = 1234) -> np.ndarray:
+        """Helper method to reduce dimensionality of embeddings using UMAP."""
+        self._validate_array(embeddings_array)
+        umap_reducer = umap.UMAP(
+            n_components=n_components,
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            metric=metric,
+            random_state=random_state
+        )
+        umap_embeddings = umap_reducer.fit_transform(embeddings_array)
+        return umap_embeddings
+
+    def _cluster_embeddings(self,
+                            embeddings_to_cluster: np.ndarray, # Typically UMAP-reduced embeddings
+                            min_cluster_size: int = 5,
+                            min_samples: Optional[int] = None, # Defaults to min_cluster_size in HDBSCAN
+                            cluster_metric: str = 'euclidean', # HDBSCAN's distance metric
+                            alpha: float = 1.0,
+                            cluster_selection_epsilon: float = 0.0,
+                            allow_single_cluster: bool = False, # HDBSCAN parameter
+                            cluster_selection_method: str = 'eom' # HDBSCAN parameter ('eom' or 'leaf')
+                           ) -> np.ndarray:
+        """Helper method to cluster embeddings using HDBSCAN."""
+        self._validate_array(embeddings_to_cluster)
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples, # Pass None to let HDBSCAN use its default (min_cluster_size)
+            metric=cluster_metric,
+            alpha=alpha,
+            cluster_selection_epsilon=cluster_selection_epsilon,
+            allow_single_cluster=allow_single_cluster,
+            cluster_selection_method=cluster_selection_method
+        )
+        cluster_labels = clusterer.fit_predict(embeddings_to_cluster)
+        return cluster_labels
                 
     def sort_embeddings(self, embeddings: Union[List[List[float]], np.ndarray]) -> pd.DataFrame:
         """Sorts embeddings using UMAP and HDBSCAN."""
@@ -179,10 +231,8 @@ class EmbeddingClient:
             raise ValueError("Input 'embeddings' cannot be empty.")
         
         # Reduce dimensionality with UMAP and cluster using HDBSCAN
-        umap_reducer = umap.UMAP(n_components=2, random_state=1234)
-        umap_embeddings = umap_reducer.fit_transform(embeddings)
-        clusterer = hdbscan.HDBSCAN(min_cluster_size=5)
-        cluster_labels = clusterer.fit_predict(umap_embeddings)
+        umap_embeddings = self._reduce_dimensions(embeddings)
+        cluster_labels = self._cluster_embeddings(umap_embeddings)
         df = pd.DataFrame({
             "original_index": np.arange(len(embeddings)),
             "cluster": cluster_labels,
