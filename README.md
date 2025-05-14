@@ -330,7 +330,7 @@ print(results)
 
 ### Getting Feedback on a Task Definition
 
-The `Task` class includes a `feedback()` method that allows you to get an LLM to provide feedback on your task definition. This can be useful for identifying potential issues, ambiguities, or areas for improvement in your system prompts, user prompts, or response model that may otherwise be easy to miss.
+The `Task` class includes a `feedback()` method that allows you to get an LLM to provide feedback on your task definition (in fact the `feedback()` method itself makes use of a `Task` instance to generate the feedback). This can be useful for identifying potential issues, ambiguities, or areas for improvement in your system prompts, user prompts, or response model that may otherwise be easy to miss. You can think of the `feedback()` method as providing built-in prompt engineering (and task design) feedback.
 
 To use it, you'll need an instance of your task and one or more `LLMClient` instances to generate the feedback. It's generally recommended to use a more capable model for generating feedback to ensure higher quality and more actionable insights. The `feedback()` method will return a string containing the feedback, and can optionally be saved to a file.
 
