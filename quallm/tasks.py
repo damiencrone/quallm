@@ -2,8 +2,10 @@
 from pydantic import BaseModel, Field, conint
 from enum import Enum
 import typing
-from typing import List, Dict, Union, TypeVar, Generic, Type
+from typing import List, Dict, Union, TypeVar, Generic, Type, Optional
+from datetime import datetime
 
+from .client import LLMClient
 from .prompt import Prompt
 
 
@@ -181,6 +183,80 @@ class Task():
             output_type=config.output_type,
             **merged_kwargs
         )
+        
+    def feedback(self,
+                 raters: Union[LLMClient, List[LLMClient]],
+                 context: str = "None provided",
+                 save_to_file: bool = False,
+                 output_filename: Optional[str] = None) -> str:
+        """
+        Solicits feedback on the current task's definition using one or more LLMs.
+
+        This method passes the current task's system prompt template, user prompt template,
+        and Pydantic response model schema (as a JSON string) to one or more
+        LLM clients. These clients, guided by the `TaskDefinitionFeedbackTask`,
+        will then provide feedback on the clarity, robustness, and potential issues
+        of the current task's design.
+
+        Args:
+            raters (Union[LLMClient, List[LLMClient]]): A single `LLMClient` or a list
+                of `LLMClient` instances that will generate the feedback. More capable
+                models are strongly advised for this role to ensure high-quality,
+                actionable feedback.
+            context (str, optional): An optional string containing any additional contextual
+                information about the task being reviewed (e.g., its specific goals,
+                the type of data it will handle, intended downstream applications, or known
+                constraints). Defaults to "None provided". Providing clear context can
+                significantly improve the relevance and depth of the feedback received.
+            save_to_file (bool, optional): If True, the generated feedback string will
+                be saved to a text file. Defaults to False.
+            output_filename (Optional[str], optional): The desired filename (including path
+                if necessary) for the saved feedback. If `save_to_file` is True and
+                this is None, a default filename `feedback_<timestamp>.txt` will be used.
+                Defaults to None.
+
+        Returns:
+            A string containing the feedback on the current task's definition.
+        """
+        # Import here to avoid circular dependency at module load time
+        from .task_examples import TaskDefinitionFeedbackTask
+        from .predictor import Predictor
+        from .dataset import Dataset
+
+        feedback_task = TaskDefinitionFeedbackTask()
+
+        # Prepare the data for the feedback task
+        feedback_data_dict = {
+            "user_provided_context": context,
+            "original_system_prompt_template": self.prompt.system_template,
+            "original_user_prompt_template": self.prompt.user_template,
+            "original_response_model_schema_json": self.response_model.model_json_schema()
+        }
+        dataset = Dataset(data=[feedback_data_dict], data_args=feedback_data_dict.keys())
+
+        predictor = Predictor(task=feedback_task, raters=raters)
+        prediction_result = predictor.predict(dataset)
+
+        feedback_strings_array = prediction_result.get()
+        list_of_feedback_strings = list(feedback_strings_array)
+        linebreak = "\n\n----------------------------------------\n\n"
+        feedback_string = """TASK DEFINITION FEEDBACK\n
+Disclaimer: LLMs can be (confidently) wrong, and when prompted to give feedback, will always come up with something.
+Use your judgment to decide if the feedback is useful or not.""" + linebreak + linebreak.join(list_of_feedback_strings)
+        
+        if output_filename is not None:
+            save_to_file = True
+        if save_to_file:
+            filename_to_use = output_filename
+            if filename_to_use is None:
+                # Generate timestamped filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename_to_use = f"feedback_{timestamp}.txt"
+            with open(filename_to_use, "w", encoding="utf-8") as f:
+                f.write(feedback_string)
+            print(f"Feedback saved to {filename_to_use}")
+
+        return feedback_string
 
     def is_attribute_list(self, attribute: str) -> bool:
         """
