@@ -225,10 +225,9 @@ class EmbeddingClient:
     def sort_embeddings(self, embeddings: Union[List[List[float]], np.ndarray]) -> pd.DataFrame:
         """Sorts embeddings using UMAP and HDBSCAN."""
         # Validate input
-        if not isinstance(embeddings, (list, np.ndarray)):
-            raise TypeError("Input 'embeddings' must be a list or a NumPy array.")
-        if len(embeddings) == 0:
-            raise ValueError("Input 'embeddings' cannot be empty.")
+        if isinstance(embeddings, list):
+            embeddings = np.array(embeddings)
+        self._validate_array(embeddings)
         
         # Reduce dimensionality with UMAP and cluster using HDBSCAN
         umap_embeddings = self._reduce_dimensions(embeddings)
