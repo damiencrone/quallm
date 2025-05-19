@@ -228,8 +228,8 @@ class Task():
         # Prepare the data for the feedback task
         feedback_data_dict = {
             "user_provided_context": context,
-            "original_system_prompt_template": self.prompt.system_template,
-            "original_user_prompt_template": self.prompt.user_template,
+            "original_system_prompt": self.prompt.system_prompt,
+            "original_user_prompt": self.prompt.user_prompt,
             "original_response_model_schema_json": self.response_model.model_json_schema()
         }
         dataset = Dataset(data=[feedback_data_dict], data_args=feedback_data_dict.keys())

@@ -190,15 +190,15 @@ User-provided context (if any; intended to inform feedback, and will not be avai
 {user_provided_context}
 </user_provided_context>
 
-Original Task System Prompt Template:
-<system_prompt_template>
-{original_system_prompt_template}
-</system_prompt_template>
+Original Task System Prompt:
+<system_prompt>
+{original_system_prompt}
+</system_prompt>
 
-Original Task User Prompt Template:
-<user_prompt_template>
-{original_user_prompt_template}
-</user_prompt_template>
+Original Task User Prompt:
+<user_prompt>
+{original_user_prompt}
+</user_prompt>
 
 Original Task Response Model (Pydantic JSON Schema):
 <response_model_schema>
@@ -210,8 +210,8 @@ Original Task Response Model (Pydantic JSON Schema):
 Provide your feedback by populating all fields of the TaskFeedbackResponse model.""",
     data_args=[
         "user_provided_context",
-        "original_system_prompt_template",
-        "original_user_prompt_template",
+        "original_system_prompt",
+        "original_user_prompt",
         "original_response_model_schema_json"
     ],
     output_attribute="feedback",
