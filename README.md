@@ -260,7 +260,7 @@ predictor = Predictor(raters=[llama_llm, phi_llm], task=task)
 pred = predictor.predict(data=['Elephant', 'Dog', 'Car', 'Train'], max_workers=5)
 
 # Print expanded results
-print(pred.expand(suffix=['llama', 'phi']))
+print(pred.expand(rater_labels=['llama', 'phi']))
 # Output:
 #                        reasoning_llama                       reasoning_phi  confidence_llama  confidence_phi  code_llama  code_phi
 # 0  The text 'Elephant' is categoriz...  The given text 'Elephant' refer...                95              98      animal    animal
