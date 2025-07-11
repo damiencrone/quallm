@@ -185,15 +185,23 @@ class EmbeddingClient:
                            n_neighbors: int = 15,
                            min_dist: float = 0.1,
                            metric: str = 'euclidean',
-                           random_state: int = 1234) -> np.ndarray:
+                           random_state: int = 1234,
+                           n_jobs: int = 1) -> np.ndarray:
         """Helper method to reduce dimensionality of embeddings using UMAP."""
         self._validate_array(embeddings_array)
+        
+        # Adjust n_neighbors based on dataset size
+        # Use minimum of provided n_neighbors and half the number of observations
+        n_samples = embeddings_array.shape[0]
+        adjusted_n_neighbors = min(n_neighbors, n_samples // 2)
+        
         umap_reducer = umap.UMAP(
             n_components=n_components,
-            n_neighbors=n_neighbors,
+            n_neighbors=adjusted_n_neighbors,
             min_dist=min_dist,
             metric=metric,
-            random_state=random_state
+            random_state=random_state,
+            n_jobs=n_jobs
         )
         umap_embeddings = umap_reducer.fit_transform(embeddings_array)
         return umap_embeddings
