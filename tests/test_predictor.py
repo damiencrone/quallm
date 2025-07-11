@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, call
 import numpy as np
+import threading
+import time
 
 from quallm.predictor import Predictor
 from quallm.prediction import Prediction
@@ -124,3 +126,63 @@ def test_predict_resumes_partially_filled_predictions(
             resumption_log_found = True
             break
     assert resumption_log_found, "Resumption log message not found or incorrect."
+
+
+def test_logs_property_returns_copy(predictor_instance):
+    """Test that the logs property returns a copy, not the original list"""
+    logs1 = predictor_instance.logs
+    logs2 = predictor_instance.logs
+    
+    # They should be equal in content
+    assert logs1 == logs2
+    
+    # But different objects
+    assert logs1 is not logs2
+    
+    # Modifying the returned list shouldn't affect the internal state
+    original_length = len(logs1)
+    logs1.append({"test": "entry"})
+    logs3 = predictor_instance.logs
+    assert len(logs3) == original_length
+
+
+def test_logs_thread_safety(predictor_instance, mock_llm_client, simple_dataset):
+    """Test that concurrent access to logs doesn't cause errors"""
+    mock_llm_client.request.return_value = SimpleResponse(text="test")
+    
+    errors = []
+    iterations_completed = []
+    
+    def read_logs_repeatedly():
+        try:
+            for i in range(100):
+                logs = predictor_instance.logs
+                # Simulate processing each log
+                for log in logs:
+                    _ = log.get("message", "")
+                time.sleep(0.001)  # Small delay to increase chance of race conditions
+            iterations_completed.append(True)
+        except Exception as e:
+            errors.append(e)
+    
+    # Start prediction in background with multiple workers
+    prediction_thread = threading.Thread(
+        target=lambda: predictor_instance.predict(data=simple_dataset, max_workers=4)
+    )
+    
+    # Start multiple threads reading logs concurrently
+    reader_threads = [threading.Thread(target=read_logs_repeatedly) for _ in range(5)]
+    
+    # Start all threads
+    prediction_thread.start()
+    for t in reader_threads:
+        t.start()
+    
+    # Wait for all threads to complete
+    prediction_thread.join()
+    for t in reader_threads:
+        t.join()
+    
+    # Check no errors occurred
+    assert len(errors) == 0, f"Thread safety errors occurred: {errors}"
+    assert len(iterations_completed) == 5, "Not all reader threads completed"

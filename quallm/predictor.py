@@ -101,14 +101,17 @@ class Predictor:
         self._log_handler = InMemoryLogHandler()
         self.logger.addHandler(self._log_handler)
 
-        # Expose logs as a public attribute
-        # Users can do: for entry in predictor.logs: ...
-        self.logs: List[dict] = self._log_handler.records
 
         # Console logging
         self._console_handler = None
         self._set_echo(echo)
         self.logger.info(f"Initialized Predictor. quallm version: {version}")
+    
+    @property
+    def logs(self) -> List[dict]:
+        """Thread-safe access to log records"""
+        with self._log_handler._lock:
+            return self._log_handler.records.copy()
     
     
     def _set_echo(self, value: bool = False):
