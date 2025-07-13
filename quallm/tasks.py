@@ -23,7 +23,7 @@ class TaskConfig:
         user_template (str): Template string for the user prompt.
         prompt (Prompt): A Prompt object containing the system and user templates.
         task_arg_values (Dict): Dictionary of task-specific argument values.
-        output_attribute (str): The name of the attribute in the response model to be used as output.
+        output_attribute (str, optional): The name of the attribute in the response model to be used as output. None for multi-field models where no default is specified.
         output_type (str): The type of output (e.g., 'single_label', 'taxonomy').
         kwargs (Dict): Optional extra arguments for specific tasks.
 
@@ -33,14 +33,14 @@ class TaskConfig:
         user_template (str): Template string for the user prompt.
         task_arg_values (Dict, optional): Dictionary of task-specific argument values (required if prompt has task args).
         data_args (Union[str, List[str]], optional): Argument name(s) to be filled with data at inference time (required if prompt has > 1 argument).
-        output_attribute (str, optional): Name of the output attribute in the response model (required if response model has > 1 attribute).
+        output_attribute (str, optional): Name of the output attribute in the response model. If not provided, automatically inferred for single-field models, None for multi-field models.
         output_type (str, optional): Type of the task output (if unspecified, inferred from response_model and output_attribute).
         kwargs (Dict, optional): Additional keyword arguments for specific tasks.
 
     Raises:
         AssertionError: If the keys in task_arg_values don't match the prompt's task arguments.
         ValueError: If the response_model is not a Pydantic model.
-        ValueError: If the output_attribute is not a top-level attribute of the response model.
+        ValueError: If the output_attribute is specified but is not a top-level attribute of the response model.
     """
     def __init__(self,
                  response_model,
@@ -72,7 +72,8 @@ class TaskConfig:
         if len(attributes) == 1:
             return next(iter(attributes))
         else:
-            raise ValueError(f"Cannot infer output_attribute from response model attributes: {attributes}. Please provide output_attribute explicitly.")
+            # Multi-field models have no default output attribute
+            return None
     
     def infer_output_type(self, output_type):
         if output_type is not None:
@@ -90,7 +91,7 @@ class TaskConfig:
             f"Keys in task_arg_values: {set(self.task_arg_values.keys())} do not match prompt task_args: {set(self.prompt.task_args)}"
         if not issubclass(self.response_model, BaseModel):
             raise ValueError("response_model must be a Pydantic model")
-        if self.output_attribute not in self.response_model.model_fields:
+        if self.output_attribute is not None and self.output_attribute not in self.response_model.model_fields:
             raise ValueError(f"output_attribute '{self.output_attribute}' must be a top-level attribute of the response model")
 
     def get_prompt(self, custom_task_args: Dict=None) -> Prompt:
@@ -114,7 +115,7 @@ class Task():
     Attributes:
         response_model: The Pydantic model defining the structure of the LLM's output.
         prompt (Prompt): A Prompt object containing the formatted system and user templates.
-        output_attribute (str): The name of the attribute in the response model to be used as output.
+        output_attribute (str, optional): The name of the attribute in the response model to be used as output. None for multi-field models where no default is specified.
         output_type (str): The type of output (e.g., 'single_label', 'taxonomy').
 
     Args:
@@ -125,7 +126,7 @@ class Task():
         
     Raises:
         ValueError: If the response_model is not a Pydantic model.
-        ValueError: If the output_attribute is not a top-level attribute of the response model.
+        ValueError: If the output_attribute is specified but is not a top-level attribute of the response model.
 
     Note:
         This class serves as a base for specific task subclasses.
@@ -146,7 +147,7 @@ class Task():
         if not issubclass(self.response_model, BaseModel):
             raise ValueError("response_model must be a Pydantic model")
         
-        if self.output_attribute not in self.response_model.model_fields:
+        if self.output_attribute is not None and self.output_attribute not in self.response_model.model_fields:
             raise ValueError(f"output_attribute '{self.output_attribute}' is not a top-level attribute of the response model")
         
     @classmethod

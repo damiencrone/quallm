@@ -76,6 +76,12 @@ class Prediction(np.ndarray):
         """
         if attribute is None:
             attribute = self.task.output_attribute
+            if attribute is None:
+                available_attrs = list(self.task.response_model.model_fields.keys())
+                raise ValueError(
+                    f"Must specify an attribute to get() when output_attribute is not set. "
+                    f"Available attributes: {available_attrs}"
+                )
             
         if indices is None:
             output_data = self
