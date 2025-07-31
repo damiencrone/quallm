@@ -36,7 +36,7 @@ class SampleString(str):
         return self._random_state
 
     def __str__(self):
-        return f"Sample of {self.sample_size} of {self.dataset_size} observations:\n{"="*10}\n{super().__str__()}"
+        return f"""Sample of {self.sample_size} of {self.dataset_size} observations:\n{'='*10}\n{super().__str__()}"""
 
 
 class Dataset(List[Dict[str, str]]):
