@@ -231,7 +231,7 @@ class Task():
             "user_provided_context": context,
             "original_system_prompt": self.prompt.system_prompt,
             "original_user_prompt": self.prompt.user_prompt,
-            "original_response_model_schema_json": self.response_model.model_json_schema()
+            "original_response_model": self.response_model.model_json_schema()
         }
         dataset = Dataset(data=[feedback_data_dict], data_args=feedback_data_dict.keys())
 
