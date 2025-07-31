@@ -164,25 +164,41 @@ task_config = TaskConfig(
     user_template="Topic: {topic}"
 )
 
+# Here, we define the two "datapoints" (topics) the language model will process
 data = ["ethical precepts", "moral transgressions"]
-llm = LLMClient(language_model="phi3.5")
+
+# And then the task
+llm = LLMClient(language_model="mistral-small3.1")
 list_generation_task = Task.from_config(task_config)
-predictor = Predictor(task=list_generation_task, raters=llm)
+predictor = Predictor(task=list_generation_task,
+                      raters=llm)
 prediction = predictor.predict(data)
 
 # Print the results
 results = prediction.expand(data=data, explode="items")
 results
 # Output:
-#                   data                                              items
-# 0     ethical precepts                       Do no harm (non-maleficence)
-# 1     ethical precepts                   Be honest and act with integrity
-# 2     ethical precepts  Respect others' rights and dignity (respect fo...
-# 3     ethical precepts  Promote fairness and justice in actions, ensdi...
-# 4 moral transgressions                              Cheating on a partner
-# 5 moral transgressions               Stealing from others without remorse
-# 6 moral transgressions   Lying to manipulate or deceive for personal gain
-# 7 moral transgressions         Disrespecting someone's dignity and rights
+#     obs_num                  data rater                             items
+# 0         0      ethical precepts    r1                   The Golden Rule
+# 1         0      ethical precepts    r1  The Principle of Non-Maleficence
+# 2         0      ethical precepts    r1      The Principle of Beneficence
+# 3         0      ethical precepts    r1         The Principle of Autonomy
+# 4         0      ethical precepts    r1          The Principle of Justice
+# 5         0      ethical precepts    r1        The Categorical Imperative
+# 6         0      ethical precepts    r1             The Veil of Ignorance
+# 7         0      ethical precepts    r1       The Precautionary Principle
+# 8         0      ethical precepts    r1    The Principle of Double Effect
+# 9         0      ethical precepts    r1  The Principle of Proportionality
+# 10        1  moral transgressions    r1                             Lying
+# 11        1  moral transgressions    r1                          Cheating
+# 12        1  moral transgressions    r1                          Stealing
+# 13        1  moral transgressions    r1                          Bullying
+# 14        1  moral transgressions    r1                        Dishonesty
+# 15        1  moral transgressions    r1                          Betrayal
+# 16        1  moral transgressions    r1                      Manipulation
+# 17        1  moral transgressions    r1                      Exploitation
+# 18        1  moral transgressions    r1                        Harassment
+# 19        1  moral transgressions    r1                    Discrimination
 ```
 
 With a little imagination, design patterns like the above can be applied to inductive content coding tasks where the LLM is tasked returning a list of arbitrarily constrained labels, concepts, and the like (i.e., with any fields you want) to describe a set of observations.
@@ -222,20 +238,78 @@ prediction = predictor.predict(data)
 results = prediction.expand(data=data, explode="concepts")
 results
 # Output:
-# data                                                rater concept_id       concept_definition
-# 0 I love the way the sun sets over the ocean; it... r1    serenity        A state of being calm, peaceful, and untroubled.
-# 0 I love the way the sun sets over the ocean; it... r1    calmness        A mental state characterized by the absence of...
-# 1 The book was so engaging that I couldn't put i... r1    engagement      A psychological state characterized by being f...
-# 2 I need a new toaster oven, but I don't have ti... r1    time_management The process of planning and controlling how mu...
-# 2 I need a new toaster oven, but I don't have ti... r1    decision_making The cognitive process of selecting a course of...
-# 3 The concert was a fantastic experience with gr... r1    experience      A psychological event or occurrence that indiv...
-# 3 The concert was a fantastic experience with gr... r1    energy          A psychological state that reflects enthusiasm...
-# 3 The concert was a fantastic experience with gr... r1    music           An art form and cultural activity that uses so...
+#    obs_num                 data rater         concept_id   concept_definition
+# 0        0  I love the way t...    r1           serenity  A state of being...
+# 1        0  I love the way t...    r1           calmness  The quality of b...
+# 2        1  The book was so ...    r1         engagement  A psychological ...
+# 3        2  I need a new toa...    r1    decision_making  The cognitive pr...
+# 4        2  I need a new toa...    r1    time_management  The ability to p...
+# 5        2  I need a new toa...    r1  consumer_behavior  The study of how...
+# 6        3  The concert was ...    r1         experience  A psychological ...
+# 7        3  The concert was ...    r1            emotion  A complex psycho...
+# 8        3  The concert was ...    r1             energy  A psychological ...
 ```
 
-### Using multiple language models, parallelization and arbitrary label sets
+### Parallel processing with max_workers
 
-Many use cases for quallm will likely entail labelling tasks in which labels are predicted for a large number of observations. As such, this example provides a barebones demonstration of how one might approach such a use case, using multiple raters, parallelizing predictions, and defining custom label sets (using the `LabelSet` class, which can be passed to a generic `SingleLabelCategorizationTask`, or if preferred, an entirely user-defined task).
+For large datasets, you can significantly speed up predictions by processing multiple items in parallel using the `max_workers` parameter. This is especially effective when using cloud-hosted models with higher rate limits.
+
+```python
+from quallm import LLMClient, Predictor
+from quallm.tasks import Task, TaskConfig
+from pydantic import BaseModel, Field
+import time
+
+# Define a simple categorization response model
+class SimpleCategory(BaseModel):
+    category: str = Field(description="The category of the document: tech, health, finance, or other")
+    confidence: int = Field(description="Confidence score from 0-100")
+
+# Create a simple task configuration
+task_config = TaskConfig(
+    response_model=SimpleCategory,
+    system_template="You are a document categorizer. Categorize documents into one of these categories: tech, health, finance, or other.",
+    user_template="Document: {document}",
+    data_args="document",  # Specify the data argument name
+    output_attribute="category"  # Specify which field to extract from the response
+)
+
+# Create a dataset
+data = [f"Document {i}: Various content here..." for i in range(20)]
+
+# Initialize LLM and task
+llm = LLMClient.from_litellm("openai/gpt-4o-mini")
+task = Task.from_config(task_config)
+
+predictor = Predictor(raters=llm, task=task)
+
+# Sequential processing (default)
+start = time.time()
+predictions_seq = predictor.predict(data, max_workers=1)
+# Predicting: 100%|██████████| 20/20 [00:13<00:00,  1.52task/s]
+seq_time = time.time() - start
+print(f"Sequential: {seq_time:.1f}s")
+# Output:
+# Sequential: 13.2s
+
+# Parallel processing
+start = time.time()
+predictions_par = predictor.predict(data, max_workers=5)
+# Predicting: 100%|██████████| 20/20 [00:03<00:00,  5.66task/s]
+par_time = time.time() - start
+print(f"Parallel: {par_time:.1f}s")
+# Output:
+# Parallel: 3.6s
+
+# Calculate speedup
+print(f"\nSpeedup with parallelization: ~{seq_time/par_time:.1f}x")
+# Output:
+# Speedup with parallelization: ~3.7x
+```
+
+### Using multiple language models and arbitrary label sets
+
+Many use cases for quallm will likely entail labelling tasks in which labels are predicted for a large number of observations. As such, this example provides a barebones demonstration of how one might approach such a use case, using multiple raters, and defining custom label sets (using the `LabelSet` class, which can be passed to a generic `SingleLabelCategorizationTask`, or if preferred, an entirely user-defined task).
 
 In this toy example, we define a categorization task where two local LLMs (Phi-3.5 and Llama-3.1) are tasked with categorizing a list of four objects as either an animal, a vehicle, or other:
 
@@ -330,11 +404,13 @@ print(results)
 
 ### Getting Feedback on a Task Definition
 
-The `Task` class includes a `feedback()` method that allows you to get an LLM to provide feedback on your task definition (in fact the `feedback()` method itself makes use of a `Task` instance to generate the feedback). This can be useful for identifying potential issues, ambiguities, or areas for improvement in your system prompts, user prompts, or response model that may otherwise be easy to miss. You can think of the `feedback()` method as providing built-in prompt engineering (and task design) feedback.
+The `Task` class includes a `feedback()` method that allows you to get an LLM to provide feedback on your task definition (in fact the `feedback()` method itself makes use of a `Task` instance to generate the feedback). This can be useful for identifying potential issues, ambiguities, or areas for improvement in your system prompts, user prompts, or response model that may otherwise be easy to miss (e.g., subtle contradictions between the prompt and response model). You can think of the `feedback()` method as providing built-in prompt engineering (and task design) feedback.
 
-To use it, you'll need an instance of your task and one or more `LLMClient` instances to generate the feedback. It's generally recommended to use a more capable model for generating feedback to ensure higher quality and more actionable insights. The `feedback()` method will return a string containing the feedback, and can optionally be saved to a file.
+To use it, you'll need an instance of your task and one or more `LLMClient` instances to generate the feedback. It's generally worthwhile to use a more capable model for generating feedback to ensure higher quality and more actionable insights. The `feedback()` method will return a string containing the feedback, and can optionally be saved to a file.
 
-Here's how you might get feedback on a new task definition:
+You can optionally supply a `context` argument, which accepts a string describing your specific use case (e.g., including information that is relevant but not part of the task definition, i.e., not part of the prompt or response model). This contextual information helps the feedback LLM understand your task's intended purpose and provide more targeted suggestions. For example, you might include details about your dataset (`context="I'm analyzing 10,000 customer reviews that have already been thoroughly pre-processed. The outputs of this task will be used to ..."`), methodological requirements or operational constraints (`context="I'm replicating a published coding scheme from Smith et al. 2023, and so have little flexibility to reformulate the task and need to use a local 8B parameter model for data privacy."`).
+
+Here's how you might get feedback on a new (and deliberately poor) task definition:
 
 ```python
 from pydantic import BaseModel, Field, conint
@@ -361,8 +437,7 @@ analysis_task = Task.from_config(analysis_task_config)
 
 # Initialize an LLMClient (or a list of them) to provide the feedback
 # It's often good to use a powerful model for this
-feedback_llm = LLMClient.from_litellm("openai/o4-mini",
-                                      temperature=None) # Note that o4 does not support temperature
+feedback_llm = LLMClient.from_litellm("anthropic/claude-sonnet-4-20250514")
 
 # Get feedback on the task definition
 feedback_text = analysis_task.feedback(
@@ -370,12 +445,39 @@ feedback_text = analysis_task.feedback(
     context="This sentiment analysis task will be used to classify responses to a survey question.",
     output_filename="task_feedback.txt"
 )
+# Output:
+# Feedback saved to task_feedback.txt
 
 # Optionally, print the feedback to the console (it's already saved to a file)
-# print(feedback_text)
-
-# Output
-# Feedback saved to task_feedback.txt
+print(feedback_text)
+# Output:
+# TASK DEFINITION FEEDBACK
+# 
+# Disclaimer: LLMs can be (confidently) wrong, and when prompted to give
+# feedback, will always come up with something. Use your judgment to decide if
+# the feedback is useful or not.
+# 
+# ----------------------------------------
+# 
+# Overall Assessment: This task definition has a clear basic structure but
+# contains several significant issues that need to be addressed, particularly
+# around prompt clarity, response model alignment, and specificity for the
+# stated use case of analyzing survey responses.
+# 
+# Critical Issues Requiring Attention:
+# 
+# 1. **Contradictory Task Objectives**: The system prompt states the goal is to
+#   "identify the main idea and assign a sentiment score," but the user context
+#   indicates this is specifically for sentiment analysis of survey responses.
+#   The main idea extraction seems secondary or potentially unnecessary for
+#   sentiment analysis. Consider whether both outputs are truly needed, or if
+#   the primary focus should be on sentiment classification.
+# 
+# ...
+# 4. Improve placeholder formatting for multi-line text handling
+# 
+# These changes will significantly improve the task's reliability and alignment
+# with your stated goal of analyzing survey responses.
 ```
 
 ### Debugging and storing session information
