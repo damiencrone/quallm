@@ -2,6 +2,7 @@
 from typing import Optional, Union, List, Dict, Any
 import pandas as pd
 import numpy as np
+from quallm.utils.dataframe_utils import is_nan_or_none
 
 
 class SampleString(str):
@@ -116,7 +117,7 @@ class Dataset(List[Dict[str, str]]):
         if set(item.keys()) != set(data_args):
             raise ValueError(f"Mismatch in data arguments. Expected: {data_args}, Received: {list(item.keys())}")
         for key, value in item.items():
-            if value is None or (isinstance(value, float) and np.isnan(value)):
+            if is_nan_or_none(value):
                 raise ValueError(f"None or NaN value found for key '{key}'")
         return item
 

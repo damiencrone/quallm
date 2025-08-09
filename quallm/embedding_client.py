@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import umap
 import hdbscan
+from quallm.utils.dataframe_utils import is_nan_or_none
 
 default_ollama_model = "nomic-embed-text"
 default_litellm_model = "text-embedding-ada-002"
@@ -92,7 +93,7 @@ class EmbeddingClient:
             # If NAs are not allowed, every item in the list must be a string
             for i, item in enumerate(texts):
                 if not isinstance(item, str):
-                    if item is None or (isinstance(item, float) and np.isnan(item)):
+                    if is_nan_or_none(item):
                         raise ValueError(
                             f"Input list contains an NA value ('{item}') at index {i}, but 'allow_na' is False."
                         )
