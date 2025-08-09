@@ -148,10 +148,9 @@ class TaskFeedbackResponse(BaseModel):
     to improve the task's design for LLM execution.
     """
     feedback: str = Field(description="Feedback on the task's clarity and robustness for LLM execution.")
-    
-TASK_DEFINITION_FEEDBACK_CONFIG = TaskConfig(
-    response_model=TaskFeedbackResponse,
-    system_template="""You are an expert AI assistant specializing in designing and evaluating LLM-assisted content analysis tasks, particularly using the `quallm` python library. You are being invoked as the `feedback` method of a `quallm` `Task` object. Your objective is to review a given `quallm` task definition and identify any potential issues that could lead to errors, ambiguities, or suboptimal performance when the task is executed on real data by another LLM. Your goal is to provide constructive, actionable feedback that will allow the user to improve the task setup before running it on their actual data.
+
+# Extracted template constants for reuse and clarity
+TASK_FEEDBACK_SYSTEM_TEMPLATE = """You are an expert AI assistant specializing in designing and evaluating LLM-assisted content analysis tasks, particularly using the `quallm` python library. You are being invoked as the `feedback` method of a `quallm` `Task` object. Your objective is to review a given `quallm` task definition and identify any potential issues that could lead to errors, ambiguities, or suboptimal performance when the task is executed on real data by another LLM. Your goal is to provide constructive, actionable feedback that will allow the user to improve the task setup before running it on their actual data.
 
 A `quallm` task definition, as you will see in the user prompt, consists of:
 1.  System Prompt Template: Typically, general instructions, context, or role-setting for the LLM that will perform the original task. This template may contain placeholders in curly braces for task-specific arguments (e.g., a role description) or other contextual details.
@@ -216,8 +215,9 @@ Feedback Guidelines:
     - If, in the `context` argument, the user directly states that they have already considered a specific matter and consider it resolved, you should refrain from providing further feedback on that matter; focus your feedback elsewhere.
 - After post-processing, your response will be returned to the user as a plain text string, so please ensure that your response is formatted as readable plain text (no markdown, appropriate use of newlines, etc.).
 
-Please analyze the provided task's system prompt template, user prompt template, and Pydantic response model schema (and any user-provided context) following all of the above guidelines. Based on this information, provide detailed, structured feedback according to the `TaskFeedbackResponse` model (a JSON object with a single string populating the `feedback` field, the only field in the `TaskFeedbackResponse` model).""",
-    user_template="""Please review the following `quallm` task definition:
+Please analyze the provided task's system prompt template, user prompt template, and Pydantic response model schema (and any user-provided context) following all of the above guidelines. Based on this information, provide detailed, structured feedback according to the `TaskFeedbackResponse` model (a JSON object with a single string populating the `feedback` field, the only field in the `TaskFeedbackResponse` model)."""
+
+TASK_FEEDBACK_USER_TEMPLATE = """Please review the following `quallm` task definition:
 
 User-provided context (if any; intended to inform feedback, and will not be available to the LLM performing the task at runtime):
 <user_provided_context>
@@ -241,12 +241,52 @@ Original Task Response Model (Pydantic model definition):
 ```
 </response_model>
 
-Provide your feedback by populating all fields of the TaskFeedbackResponse model.""",
+<data_summary>
+{data_summary}
+</data_summary>
+
+<output_summary>
+{output_summary}
+</output_summary>
+
+<observations>
+{observations}
+</observations>
+
+Provide your feedback by populating all fields of the TaskFeedbackResponse model."""
+
+# Additional instructions for conditional prompt assembly
+DATA_ANALYSIS_INSTRUCTIONS = """
+When analyzing the provided example data:
+- Check alignment between data structure and prompt placeholders
+- Identify potential edge cases in the data
+- Assess whether data types match what the prompts expect
+- Look for missing values that might cause issues
+- Note the interleaved format shows input-output pairs for each observation
+"""
+
+EXECUTION_ANALYSIS_INSTRUCTIONS = """
+When analyzing task execution results:
+- Review output distributions for scale coverage
+- Check for systematic errors or validation issues
+- Assess whether outputs align with response model constraints
+- Identify unused enum values or scale points
+- Examine the correspondence between specific inputs and their outputs
+- Note any patterns in which inputs produce errors or unexpected results
+"""
+
+TASK_DEFINITION_FEEDBACK_CONFIG = TaskConfig(
+    response_model=TaskFeedbackResponse,
+    system_template=TASK_FEEDBACK_SYSTEM_TEMPLATE,
+    user_template=TASK_FEEDBACK_USER_TEMPLATE,
     data_args=[
         "user_provided_context",
         "original_system_prompt",
         "original_user_prompt",
-        "original_response_model"
+        "original_response_model",
+        "data_summary",
+        "output_summary",
+        "observations"
     ],
     output_attribute="feedback",
 )
