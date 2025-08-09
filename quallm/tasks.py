@@ -194,39 +194,63 @@ class Task():
                  save_to_file: bool = False,
                  output_filename: Optional[str] = None) -> str:
         """
-        Solicits feedback on the current task's definition using one or more LLMs.
+        Get feedback on the task definition with optional example data integration.
 
         This method passes the current task's system prompt template, user prompt template,
-        and Pydantic response model schema (as a JSON string) to one or more
-        LLM clients. These clients, guided by the `TaskDefinitionFeedbackTask`,
-        will then provide feedback on the clarity, robustness, and potential issues
-        of the current task's design.
+        and Pydantic response model schema to one or more LLM clients for analysis.
+        When example data is provided, the method analyzes data structure and statistics.
+        When task_raters are also provided, it runs the task on examples and includes
+        execution results in the feedback.
 
         Args:
-            raters (Union[LLMClient, List[LLMClient]]): A single `LLMClient` or a list
-                of `LLMClient` instances that will generate the feedback. More capable
-                models are strongly advised for this role to ensure high-quality,
-                actionable feedback.
-            context (str, optional): An optional string containing any additional contextual
-                information about the task being reviewed (e.g., its specific goals,
-                the type of data it will handle, intended downstream applications, or known
-                constraints). Defaults to "None provided". Providing clear context can
-                significantly improve the relevance and depth of the feedback received.
-            example_data: Optional example data to analyze (Dataset, List, or DataFrame).
-            task_raters: LLM client(s) to run the task on examples (if provided, task will be run).
-            config: Configuration object or dict for feedback options.
-            save_to_file (bool, optional): If True, the generated feedback string will
-                be saved to a text file. Defaults to False.
-            output_filename (Optional[str], optional): The desired filename (including path
-                if necessary) for the saved feedback. If `save_to_file` is True and
-                this is None, a default filename `feedback_<timestamp>.txt` will be used.
-                Defaults to None.
+            raters: LLM client(s) to provide feedback. More capable models are
+                strongly advised for high-quality, actionable feedback.
+            context: Optional context about the task's intended use (e.g., goals,
+                data types, downstream applications, constraints). Defaults to
+                "None provided".
+            example_data: Optional example data to analyze. Can be a Dataset,
+                list, or DataFrame. When provided, data statistics and samples
+                are included in the feedback analysis.
+            task_raters: Optional LLM client(s) to run the task on examples.
+                If provided, the task will be executed on example_data and
+                results will be analyzed. Requires example_data to be provided.
+            config: Configuration for feedback options. Can be a FeedbackConfig
+                object or dict with configuration parameters. Controls sampling,
+                text truncation, and other feedback behavior.
+            save_to_file: If True, saves the feedback to a text file.
+            output_filename: Filename for saved feedback. If save_to_file is True
+                and this is None, uses `feedback_<timestamp>.txt`.
 
         Returns:
-            A string containing the feedback on the current task's definition.
+            str: Formatted feedback on the task definition, including data analysis
+                and execution results when applicable.
+
+        Raises:
+            TypeError: If config is not FeedbackConfig, dict, or None.
+            ValueError: If task_raters is provided without example_data.
+            ValueError: If example data fields don't match task data_args.
+
+        Example:
+            >>> task = Task.from_config(my_config)
+            >>> feedback = task.feedback(
+            ...     raters=strong_llm,
+            ...     context="Analyzing customer reviews for sentiment",
+            ...     example_data=review_dataset,
+            ...     task_raters=task_llm,
+            ...     config={'max_examples_to_process': 10}
+            ... )
         """
         from .predictor import Predictor
         from .dataset import Dataset
+        from .feedback_config import FeedbackConfig
+
+        # Validate and convert config
+        if config is None:
+            config = FeedbackConfig()
+        elif isinstance(config, dict):
+            config = FeedbackConfig(**config)
+        elif not isinstance(config, FeedbackConfig):
+            raise TypeError(f"config must be FeedbackConfig, dict, or None, got {type(config)}")
 
         # Convert example_data to Dataset if needed
         if example_data is not None and not isinstance(example_data, Dataset):
@@ -271,7 +295,7 @@ Use your judgment to decide if the feedback is useful or not.""" + linebreak + l
                               context: str,
                               example_data: Optional['Dataset'],
                               task_raters: Optional[Union[LLMClient, List[LLMClient]]],
-                              config: Optional[Union['FeedbackConfig', dict]]) -> tuple:
+                              config: 'FeedbackConfig') -> tuple:
         """
         Prepare the feedback task and data dictionary for feedback generation.
         
@@ -283,7 +307,7 @@ Use your judgment to decide if the feedback is useful or not.""" + linebreak + l
             context: Context about the task's intended use
             example_data: Optional Dataset with example data (already converted)
             task_raters: Optional LLM client(s) to run the task on examples
-            config: Configuration for feedback options (currently unused in Phase 2)
+            config: Validated FeedbackConfig object
         
         Returns:
             Tuple of (feedback_task, feedback_data_dict) ready for prediction
@@ -299,22 +323,62 @@ Use your judgment to decide if the feedback is useful or not.""" + linebreak + l
         if task_raters is not None and example_data is None:
             raise ValueError("example_data must be provided when task_raters is specified")
         
-        # Initialize placeholder values for new fields
+        # Initialize default values
         data_summary = "None provided"
         output_summary = "None available" 
         observations = "None available"
         
-        # Phase 2: Use placeholder strings when example data is provided
+        # Process example data if provided
         if example_data is not None:
-            data_summary = f"Example data provided: {len(example_data)} samples (detailed analysis pending implementation)"
+            # Validate data schema matches expected fields
+            if len(example_data) > 0:
+                actual_fields = set(example_data[0].keys())
+                expected_fields = set(self.prompt.data_args) if self.prompt.data_args else set()
+                if expected_fields and actual_fields != expected_fields:
+                    raise ValueError(
+                        f"Example data fields {actual_fields} don't match "
+                        f"task data_args {expected_fields}"
+                    )
             
-            # If task_raters are also provided, indicate task execution would happen
+            # Get data summary using the Dataset method
+            data_summary = example_data.get_data_summary_string(config)
+            
+            # Run task and analyze results if task_raters provided
             if task_raters is not None:
-                output_summary = "Task execution on examples pending implementation"
-                observations = "Interleaved input-output observations pending implementation"
+                # Sample data for processing (execution sampling)
+                import random
+                n_to_process = min(config.max_examples_to_process, len(example_data))
+                indices_to_process = random.sample(range(len(example_data)), n_to_process)
+                indices_to_process.sort()  # Keep in order for cleaner processing
+                sampled_data = type(example_data)(
+                    [example_data[i] for i in indices_to_process],
+                    data_args=example_data.data_args
+                )
+                
+                # Run task on sampled data
+                results = self._run_task_on_examples(sampled_data, task_raters, config)
+                
+                # Get output summary using new Prediction methods
+                tabulations = results['predictions'].get_tabulations_string(self.response_model, config)
+                output_summary = results['predictions'].get_output_summary_string(
+                    error_summary=results['error_summary'],
+                    rater_info=results['rater_info'],
+                    tabulations=tabulations
+                )
+                
+                # Generate formatted observations (display sampling happens inside this method)
+                observations = example_data.format_observations(
+                    predictions=results['predictions'],
+                    config=config,
+                    processed_indices=indices_to_process  # Pass which indices were processed
+                )
             else:
-                # Data only mode
-                observations = "Input observations pending implementation"
+                # Data only mode - show inputs without outputs
+                observations = example_data.format_observations(
+                    predictions=None,
+                    config=config,
+                    processed_indices=None  # No processing done, will sample from all data
+                )
         
         # Build conditional system prompt
         system_prompt = TASK_DEFINITION_FEEDBACK_CONFIG.prompt.system_template
@@ -346,6 +410,56 @@ Use your judgment to decide if the feedback is useful or not.""" + linebreak + l
         }
         
         return feedback_task, feedback_data_dict
+
+    def _run_task_on_examples(self, 
+                             example_data: 'Dataset', 
+                             task_raters: Union[LLMClient, List[LLMClient]], 
+                             config: 'FeedbackConfig') -> dict:
+        """
+        Execute task on provided data and collect results.
+        
+        Args:
+            example_data: Dataset to process (already sampled by caller)
+            task_raters: LLM client(s) to use for task execution
+            config: Configuration for feedback options
+        
+        Returns:
+            Dictionary with execution results:
+            {
+                "predictions": <Prediction object>,
+                "error_summary": {"total_errors": 2, "error_categories": {"validation": 2}, ...},
+                "rater_info": ["gpt-4 (temp=0.0)", "claude-3 (temp=0.5)"]
+            }
+        
+        Note: This method does NOT handle sampling. The caller is responsible for:
+        - Sampling which data to process (execution sampling)
+        - Sampling which results to display (display sampling)
+        """
+        # Validate inputs
+        if len(example_data) == 0:
+            raise ValueError("example_data cannot be empty")
+        
+        # Test raters if configured
+        if config.test_task_raters:
+            raters_list = task_raters if isinstance(task_raters, list) else [task_raters]
+            for rater in raters_list:
+                try:
+                    result = rater.test()
+                    # test() returns a string response
+                except Exception as e:
+                    raise ValueError(f"Task rater {rater.language_model} failed connectivity test: {e}")
+        
+        # Run predictions
+        from .predictor import Predictor
+        predictor = Predictor(raters=task_raters, task=self)
+        predictions = predictor.predict(example_data, max_workers=1)
+        
+        # Return results with execution summaries
+        return {
+            "predictions": predictions,
+            "error_summary": predictor.get_error_summary(),
+            "rater_info": predictor.get_rater_info()
+        }
 
     def is_attribute_list(self, attribute: str) -> bool:
         """
