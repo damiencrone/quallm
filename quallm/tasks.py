@@ -230,14 +230,36 @@ class Task():
             ValueError: If task_raters is provided without example_data.
             ValueError: If example data fields don't match task data_args.
 
-        Example:
+        Examples:
+            Mode 0 - Basic feedback without example data:
             >>> task = Task.from_config(my_config)
+            >>> feedback = task.feedback(
+            ...     raters=strong_llm,
+            ...     context="Analyzing customer reviews for sentiment"
+            ... )
+            
+            Mode 1 - Feedback with example data analysis:
             >>> feedback = task.feedback(
             ...     raters=strong_llm,
             ...     context="Analyzing customer reviews for sentiment",
             ...     example_data=review_dataset,
-            ...     task_raters=task_llm,
-            ...     config={'max_examples_to_process': 10}
+            ...     config={'max_examples_to_show': 5}
+            ... )
+            
+            Mode 2 - Full feedback with task execution:
+            >>> from quallm.feedback_config import FeedbackConfig
+            >>> config = FeedbackConfig(
+            ...     max_examples_to_process=20,  # Run on 20 examples
+            ...     max_examples_to_show=5,       # Show 5 in feedback
+            ...     test_task_raters=True         # Test connectivity first
+            ... )
+            >>> feedback = task.feedback(
+            ...     raters=strong_llm,              # LLM for generating feedback
+            ...     context="Production sentiment analysis system",
+            ...     example_data=review_dataset,     # Your actual data
+            ...     task_raters=[llm1, llm2],       # LLMs to execute task
+            ...     config=config,
+            ...     output_filename="task_feedback.txt"
             ... )
         """
         from .predictor import Predictor
