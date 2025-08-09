@@ -196,3 +196,39 @@ def test_data_args_errors(request, input_fixture, data_args, expected_error):
     input_data = request.getfixturevalue(input_fixture)
     with pytest.raises(ValueError, match=expected_error):
         Dataset(input_data, data_args)
+
+
+def test_get_data_summary_string():
+    """Test get_data_summary_string method"""
+    data = [
+        {"text": "hello", "number": 1},
+        {"text": "world", "number": 2}
+    ]
+    dataset = Dataset(data, data_args=["text", "number"])
+    summary = dataset.get_data_summary_string()
+    
+    assert "Data schema (2 examples)" in summary
+    assert "text: type=str" in summary
+    assert "number: type=int64" in summary
+
+
+def test_format_data_item():
+    """Test format_data_item method"""
+    data = [{"text": "hello world", "number": 42}]
+    dataset = Dataset(data, data_args=["text", "number"])
+    formatted = dataset.format_data_item(0)
+    
+    assert "text: 'hello world'" in formatted
+    assert "number: 42" in formatted
+
+
+def test_format_observations_without_predictions():
+    """Test format_observations without predictions"""
+    data = [{"text": "test"}, {"text": "data"}]
+    dataset = Dataset(data, data_args=["text"])
+    observations = dataset.format_observations()
+    
+    assert "<observation>" in observations
+    assert "<input>" in observations
+    assert "text: 'test'" in observations or "text: 'data'" in observations
+    assert "<output>" not in observations

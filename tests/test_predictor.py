@@ -186,3 +186,53 @@ def test_logs_thread_safety(predictor_instance, mock_llm_client, simple_dataset)
     # Check no errors occurred
     assert len(errors) == 0, f"Thread safety errors occurred: {errors}"
     assert len(iterations_completed) == 5, "Not all reader threads completed"
+
+
+def test_get_rater_info():
+    """Test get_rater_info method"""
+    from pydantic import BaseModel
+    
+    # Create a simple task
+    class SimpleResponse(BaseModel):
+        answer: str
+    
+    config = TaskConfig(
+        response_model=SimpleResponse,
+        system_template="Test",
+        user_template="{text}",
+        data_args=["text"],
+        output_attribute="answer"
+    )
+    task = Task.from_config(config)
+    
+    # Create predictor with mock clients
+    rater = LLMClient(language_model="test-model", temperature=0.5)
+    predictor = Predictor(task=task, raters=[rater])
+    
+    rater_info = predictor.get_rater_info()
+    assert len(rater_info) == 1
+    assert "test-model (temp=0.5)" in rater_info[0]
+
+
+def test_get_error_summary_empty():
+    """Test get_error_summary with no errors"""
+    from pydantic import BaseModel
+    
+    # Create a simple task
+    class SimpleResponse(BaseModel):
+        answer: str
+    
+    config = TaskConfig(
+        response_model=SimpleResponse,
+        system_template="Test",
+        user_template="{text}",
+        data_args=["text"],
+        output_attribute="answer"
+    )
+    task = Task.from_config(config)
+    
+    predictor = Predictor(task=task, raters=[LLMClient()])
+    summary = predictor.get_error_summary()
+    
+    assert summary["total_errors"] == 0
+    assert summary["error_categories"] == {}

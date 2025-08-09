@@ -369,3 +369,61 @@ def test_expand_single_datapoint_qa_multi_rater():
         value = expanded.loc[0, col]
         assert isinstance(value, str)
         assert len(value) > 0
+
+
+def test_format_output_item():
+    """Test format_output_item method"""
+    from typing import List
+    from pydantic import Field
+    
+    # Create a simple task like in the README
+    class ListResponse(BaseModel):
+        items: List[str] = Field(description="A list of items")
+    
+    task_config = TaskConfig(
+        response_model=ListResponse,
+        system_template="Generate a list.",
+        user_template="Topic: {topic}"
+    )
+    task = Task.from_config(task_config)
+    
+    # Create a prediction array with mock data
+    prediction = Prediction(task=task, n_obs=1, n_raters=1)
+    prediction[0, 0] = {
+        'response': [ListResponse(items=["item1", "item2"])]
+    }
+    
+    formatted = prediction.format_output_item(0)
+    assert "items: ['item1', 'item2']" in formatted
+
+
+def test_get_output_summary_string():
+    """Test get_output_summary_string method"""
+    # Mock inputs
+    error_summary = {
+        'success_rate': '100.0%',
+        'tasks_completed': 10,
+        'tasks_started': 10
+    }
+    rater_info = ["test-model (temp=0.0)"]
+    tabulations = "- field1: {value1: 5, value2: 5}"
+    
+    # Create a dummy prediction to call the method
+    class SimpleResponse(BaseModel):
+        answer: str
+    
+    config = TaskConfig(
+        response_model=SimpleResponse,
+        system_template="Test",
+        user_template="{text}",
+        data_args=["text"],
+        output_attribute="answer"
+    )
+    task = Task.from_config(config)
+    prediction = Prediction(task=task, n_obs=1, n_raters=1)
+    
+    summary = prediction.get_output_summary_string(error_summary, rater_info, tabulations)
+    assert "Task raters:" in summary
+    assert "test-model (temp=0.0)" in summary
+    assert "Success rate: 100.0%" in summary
+    assert "Output distributions:" in summary

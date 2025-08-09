@@ -6,7 +6,7 @@ from .prediction import Prediction
 # Import version information
 from quallm import __version__ as version
 
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Any
 import pandas as pd
 import numpy as np
 import concurrent.futures
@@ -321,3 +321,83 @@ class Predictor:
         import json
         with open(path, "w") as f:
             json.dump(self.logs, f, indent=2)
+    
+    def get_error_summary(self) -> Dict[str, Any]:
+        """
+        Analyze error patterns from in-memory log records.
+        
+        Returns:
+            Dictionary containing:
+            - total_errors: Total number of ERROR level log entries
+            - error_categories: Dict of error types and their counts
+            - success_rate: Percentage of successfully completed tasks
+            - tasks_started: Number of predictions that were started
+            - tasks_completed: Number of predictions that completed successfully
+        
+        Example:
+            >>> predictor.get_error_summary()
+            {
+                "total_errors": 3,
+                "error_categories": {"validation": 2, "connection": 1},
+                "success_rate": "85.0%",
+                "tasks_started": 20,
+                "tasks_completed": 17
+            }
+        """
+        df = self.logs_df()
+        if df.empty:
+            return {
+                "total_errors": 0,
+                "error_categories": {},
+                "success_rate": "N/A",
+                "tasks_started": 0,
+                "tasks_completed": 0
+            }
+        
+        # Count events by type
+        error_df = df[df['level'] == 'ERROR']
+        task_starts = df[df['message'].str.contains('Beginning prediction', na=False)].shape[0]
+        task_completions = df[df['message'].str.contains('Returning prediction', na=False)].shape[0]
+        
+        # Categorize errors
+        error_categories = {}
+        if not error_df.empty:
+            patterns = {
+                'validation': r'validation|ValidationError',
+                'connection': r'connection|network|refused',
+                'timeout': r'timeout|timed out',
+                'parsing': r'parsing|json|decode'
+            }
+            
+            for category, pattern in patterns.items():
+                count = error_df[error_df['message'].str.contains(pattern, case=False, na=False)].shape[0]
+                if count > 0:
+                    error_categories[category] = count
+            
+            # Count uncategorized errors
+            categorized = sum(error_categories.values())
+            if categorized < len(error_df):
+                error_categories['other'] = len(error_df) - categorized
+        
+        success_rate = f"{(task_completions / task_starts * 100):.1f}%" if task_starts > 0 else "0.0%"
+        
+        return {
+            "total_errors": len(error_df),
+            "error_categories": error_categories,
+            "success_rate": success_rate,
+            "tasks_started": task_starts,
+            "tasks_completed": task_completions
+        }
+    
+    def get_rater_info(self) -> List[str]:
+        """
+        Format rater information as list of strings.
+        
+        Returns:
+            List of formatted rater descriptions
+        
+        Example:
+            >>> predictor.get_rater_info()
+            ["gpt-4 (temp=0.0)", "claude-3-opus (temp=0.5)"]
+        """
+        return [f"{r.language_model} (temp={r.temperature})" for r in self.raters]

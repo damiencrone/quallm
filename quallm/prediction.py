@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Dict, Any, Type
+from pydantic import BaseModel
 from .embedding_client import EmbeddingClient
 import warnings
 
@@ -311,3 +312,157 @@ class Prediction(np.ndarray):
     def code_reliability(self):
         # TODO (later): Compute reliability metrics based on the results when n_raters > 1
         raise NotImplementedError("The code_reliability method has not been implemented yet.")
+    
+    def format_output_item(self, index: int, rater_idx: int = 0) -> str:
+        """
+        Format a single output item for display.
+        
+        Args:
+            index: Row index in the prediction array
+            rater_idx: Which rater's output to show (default: first rater)
+        
+        Returns:
+            Formatted string representation of the output
+        
+        Example:
+            >>> prediction.format_output_item(0)
+            "sentiment: 'positive'\\nconfidence: 9"
+        """
+        if index >= self.n_obs:
+            raise IndexError(f"Index {index} out of range for predictions of length {self.n_obs}")
+        if rater_idx >= self.n_raters:
+            raise IndexError(f"Rater index {rater_idx} out of range for {self.n_raters} raters")
+        
+        item = self[index, rater_idx]
+        if item is None:
+            return "  [No prediction available]"
+        
+        # Extract the response object
+        response = item['response'][0]
+        
+        # Format each field of the response
+        formatted_lines = []
+        for field_name in self.task.response_model.model_fields.keys():
+            value = getattr(response, field_name)
+            if hasattr(value, 'value'):  # Handle enums
+                value = value.value
+            formatted_lines.append(f"  {field_name}: {repr(value)}")
+        
+        return "\n".join(formatted_lines)
+    
+    def get_tabulations_string(self, response_model: Type[BaseModel], config: Optional['FeedbackConfig'] = None) -> str:
+        """
+        Generate tabulation strings for categorical fields based on response model types.
+        
+        Args:
+            response_model: The Pydantic response model class
+            config: Optional FeedbackConfig for controlling thresholds
+        
+        Returns:
+            Formatted string with tabulations for categorical/enum fields
+        
+        Example:
+            >>> prediction.get_tabulations_string(SentimentResponse)
+            "- sentiment (enum): {'positive': 45, 'negative': 30, 'neutral': 25}\\n- confidence (integer, range 1-10): [1-2]: 5, [3-4]: 12, ..."
+        """
+        from quallm.feedback_config import FeedbackConfig
+        from quallm.utils.dataframe_utils import safe_value_counts, safe_binning, format_bin_intervals
+        
+        if config is None:
+            config = FeedbackConfig()
+        
+        expanded = self.expand()
+        tabulations = []
+        schema = response_model.model_json_schema()
+        
+        for field_name, field_info in schema["properties"].items():
+            field_type = field_info.get("type")
+            enum_values = field_info.get("enum")
+            
+            values = expanded[field_name]
+            unique_count = values.nunique()
+            
+            # Determine if field should be tabulated
+            should_tabulate = False
+            tabulation_type = None
+            
+            if enum_values:
+                should_tabulate = True
+                tabulation_type = "enum"
+            elif field_type == "boolean":
+                should_tabulate = True
+                tabulation_type = "boolean"
+            elif field_type in ["string", "integer"] and 0 < unique_count <= config.tabulation_threshold:
+                should_tabulate = True
+                tabulation_type = field_type
+            elif field_type in ["integer", "number"] and unique_count > config.tabulation_threshold:
+                # Bin high-cardinality numerics
+                should_tabulate = True
+                tabulation_type = "binned numeric"
+            
+            if should_tabulate:
+                if tabulation_type == "binned numeric":
+                    # Create bins
+                    min_val, max_val = values.min(), values.max()
+                    if min_val == max_val:
+                        tabulations.append(f"- {field_name} ({field_type}): all values = {min_val}")
+                        continue
+                    
+                    binned = safe_binning(values.dropna(), n_bins=config.num_bins)
+                    if len(binned) == 0:
+                        tabulations.append(f"- {field_name} ({field_type}): no values to bin")
+                        continue
+                    
+                    # Format binned output with cleaner intervals
+                    value_counts = binned.value_counts().sort_index()
+                    formatted_intervals = format_bin_intervals(value_counts.index)
+                    dist_items = [f"{interval}: {count}" for interval, count in zip(formatted_intervals, value_counts.values)]
+                    dist_str = ", ".join(dist_items)
+                    tabulations.append(f"- {field_name} ({field_type}, range {min_val}-{max_val}): {dist_str}")
+                else:
+                    # Regular tabulation
+                    value_counts = safe_value_counts(values, dropna=False)
+                    dist_items = [f"{repr(k)}: {v}" for k, v in value_counts.items()]
+                    dist_str = ", ".join(dist_items[:10])  # Limit display
+                    
+                    # Add unused enum values if applicable
+                    extra_info = ""
+                    if enum_values:
+                        unused = set(enum_values) - set(value_counts.index)
+                        if unused:
+                            extra_info = f", unused: {list(unused)}"
+                    
+                    tabulations.append(f"- {field_name} ({tabulation_type}): {{{dist_str}{extra_info}}}")
+        
+        return "\n".join(tabulations) if tabulations else "No categorical fields to tabulate"
+    
+    def get_output_summary_string(self, error_summary: Dict[str, Any], rater_info: List[str], tabulations: str) -> str:
+        """
+        Format execution summary string including success rates and output distributions.
+        
+        Args:
+            error_summary: Dictionary from Predictor.get_error_summary()
+            rater_info: List of rater descriptions from Predictor.get_rater_info()
+            tabulations: String of tabulated outputs from self.get_tabulations_string()
+        
+        Returns:
+            Formatted summary string
+        
+        Example:
+            >>> prediction.get_output_summary_string(error_summary, rater_info, tabulations)
+            "Task raters:\\n- gpt-4 (temp=0.0)\\n- claude-3-opus (temp=0.5)\\nSuccess rate: 85.0% (17/20 tasks)\\n..."
+        """
+        rater_lines = [f"- {info}" for info in rater_info]
+        
+        # Format success rate
+        if error_summary:
+            success_rate = error_summary.get('success_rate', '0.0%')
+            tasks_completed = error_summary.get('tasks_completed', 0)
+            tasks_started = error_summary.get('tasks_started', 0)
+            success_info = f"{success_rate} ({tasks_completed}/{tasks_started} tasks)"
+        else:
+            success_info = "100.0% (all tasks completed)"
+        
+        raters_section = "\n".join(rater_lines)
+        summary = f"Task raters:\n{raters_section}\nSuccess rate: {success_info}\nOutput distributions:\n{tabulations}"
+        return summary

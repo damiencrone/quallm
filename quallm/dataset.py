@@ -238,3 +238,192 @@ class Dataset(List[Dict[str, str]]):
             row_str = "\n".join(f"{col}: {val}" for col, val in row.items() if pd.notna(val))
             combined.append(row_str)
         return f"\n{separator}\n".join(combined)
+    
+    def get_data_summary_string(self, config: Optional['FeedbackConfig'] = None) -> str:
+        """
+        Extract schema and compute descriptive statistics.
+        
+        Returns a formatted string summary of the dataset structure with statistics
+        for each field based on its data type.
+        
+        Args:
+            config: Optional FeedbackConfig for controlling display settings
+        
+        Returns:
+            Formatted string with data schema and statistics
+        
+        Example:
+            >>> dataset.get_data_summary()
+            "Data schema (20 examples):\\nFields:\\n  - text: type=str, missing=0, ..."
+        """
+        from quallm.utils.dataframe_utils import (
+            infer_column_type, compute_string_stats,
+            compute_list_stats, safe_describe, format_float
+        )
+        from quallm.feedback_config import FeedbackConfig
+        
+        if config is None:
+            config = FeedbackConfig()
+        
+        # Convert to DataFrame for analysis
+        df = pd.DataFrame(self)
+        
+        schema_lines = [f"Data schema ({len(df)} examples):", "Fields:"]
+        
+        for col in df.columns:
+            missing = df[col].isna().sum()
+            type_name, type_class = infer_column_type(df[col])
+            
+            if type_name == 'unknown':
+                stats = f"type=unknown, missing={missing}"
+            elif type_class == str:
+                # String statistics
+                str_stats = compute_string_stats(df[col])
+                stats = f"type=str, missing={missing}, empty={str_stats['empty_count']}, "
+                stats += f"length_stats={{min={str_stats['min_length']}, max={str_stats['max_length']}, "
+                stats += f"mean={format_float(str_stats['mean_length'], 1)}, median={format_float(str_stats['median_length'], 1)}}}"
+            elif type_class == list:
+                # List statistics
+                list_stats = compute_list_stats(df[col])
+                stats = f"type=list, missing={missing}, "
+                stats += f"length_stats={{min={list_stats['min_length']}, max={list_stats['max_length']}, "
+                stats += f"mean={format_float(list_stats['mean_length'], 1)}}}"
+            elif df[col].dtype in ['int64', 'float64']:
+                # Numeric statistics
+                num_stats = safe_describe(df[col])
+                stats = f"type={df[col].dtype}, missing={missing}, "
+                stats += f"stats={{min={format_float(num_stats['min'])}, max={format_float(num_stats['max'])}, "
+                stats += f"mean={format_float(num_stats['mean'])}, std={format_float(num_stats['std'])}}}"
+            else:
+                # Other types
+                stats = f"type={type_name}, missing={missing}, unique={df[col].nunique()}"
+            
+            schema_lines.append(f"  - {col}: {stats}")
+        
+        return "\n".join(schema_lines)
+    
+    def format_data_item(self, index: int, config: Optional['FeedbackConfig'] = None) -> str:
+        """
+        Format a single data item for display with intelligent truncation.
+        
+        Args:
+            index: Index of the data item to format
+            config: Optional FeedbackConfig for controlling display settings
+        
+        Returns:
+            Formatted string representation of the data item
+        
+        Example:
+            >>> dataset.format_data_item(0)
+            "text: 'This is a sample text...' (150 chars)\\nrating: 5"
+        """
+        from quallm.utils.dataframe_utils import truncate_string, format_list_preview
+        from quallm.feedback_config import FeedbackConfig
+        
+        if config is None:
+            config = FeedbackConfig()
+        
+        if index >= len(self):
+            raise IndexError(f"Index {index} out of range for dataset of length {len(self)}")
+        
+        item = self[index]
+        formatted_lines = []
+        
+        for key, value in item.items():
+            if pd.isna(value):
+                display = "None"
+            elif isinstance(value, str):
+                if len(value) > config.max_text_length:
+                    display = truncate_string(value, config.max_text_length)
+                else:
+                    display = repr(value)
+            elif isinstance(value, list):
+                display = format_list_preview(value, max_items=3)
+            else:
+                display = repr(value)
+            
+            formatted_lines.append(f"  {key}: {display}")
+        
+        return "\n".join(formatted_lines)
+    
+    def format_observations(self, predictions: Optional['Prediction'] = None,
+                           config: Optional['FeedbackConfig'] = None,
+                           processed_indices: Optional[List[int]] = None) -> str:
+        """
+        Format observations for display in nested XML format, optionally with outputs.
+        
+        Args:
+            predictions: Optional Prediction object with task execution results
+            config: Configuration for display settings
+            processed_indices: Indices of data items that were processed (for Mode 2).
+                              If None (Mode 1), will sample from all available data
+        
+        Returns:
+            XML-formatted string with observations (inputs and optionally outputs)
+        
+        Example output:
+            Showing 3 of 20 processed examples:
+            <observation>
+              <input>
+                text: "This product exceeded my expectations..." (245 chars)
+                rating: 5
+              </input>
+              <output>
+                sentiment: 'positive'
+                confidence: 9
+              </output>
+            </observation>
+        """
+        from quallm.feedback_config import FeedbackConfig
+        
+        if config is None:
+            config = FeedbackConfig()
+        
+        # Determine which indices to display
+        if processed_indices is not None:
+            # Mode 2: We have processed specific indices
+            available_indices = processed_indices
+            header = f"Showing {min(config.max_examples_to_show, len(available_indices))} of {len(available_indices)} processed examples:"
+        else:
+            # Mode 1: No processing done, sample from all data
+            available_indices = list(range(len(self)))
+            header = f"Showing {min(config.max_examples_to_show, len(self))} examples:"
+        
+        # Sample indices to display
+        import random
+        n_to_show = min(config.max_examples_to_show, len(available_indices))
+        if n_to_show == 0:
+            return "No examples to show"
+        
+        display_indices = random.sample(available_indices, n_to_show)
+        display_indices.sort()  # Keep in order
+        
+        observations = [header]
+        
+        for idx in display_indices:
+            obs_lines = ["<observation>", "  <input>"]
+            
+            # Format input
+            input_formatted = self.format_data_item(idx, config)
+            for line in input_formatted.split('\n'):
+                obs_lines.append("  " + line)
+            obs_lines.append("  </input>")
+            
+            # Format output if predictions available
+            if predictions is not None:
+                # Find the position in predictions array
+                if processed_indices is not None:
+                    pred_idx = processed_indices.index(idx)
+                else:
+                    pred_idx = idx
+                
+                obs_lines.append("  <output>")
+                output_formatted = predictions.format_output_item(pred_idx, rater_idx=0)
+                for line in output_formatted.split('\n'):
+                    obs_lines.append("  " + line)
+                obs_lines.append("  </output>")
+            
+            obs_lines.append("</observation>")
+            observations.append("\n".join(obs_lines))
+        
+        return "\n".join(observations)
