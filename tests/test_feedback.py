@@ -4,6 +4,8 @@ Test for the feedback() method - baseline test before implementing enhancements
 from pydantic import BaseModel, Field, conint
 from quallm import LLMClient
 from quallm.tasks import Task, TaskConfig
+from quallm.dataset import Dataset
+from quallm.task_examples import DATA_ANALYSIS_INSTRUCTIONS, EXECUTION_ANALYSIS_INSTRUCTIONS
 
 
 def test_feedback_method_works():
@@ -40,3 +42,72 @@ def test_feedback_method_works():
     assert isinstance(feedback_text, str)
     assert "TASK DEFINITION FEEDBACK" in feedback_text
     assert len(feedback_text) > 100  # Should return substantive feedback
+
+
+def test_prepare_feedback_task():
+    """Test that _prepare_feedback_task builds prompts and data correctly for all modes"""
+    
+    # Create a simple task
+    class SimpleResponse(BaseModel):
+        result: str = Field(description="Result")
+    
+    task = Task.from_config(TaskConfig(
+        response_model=SimpleResponse,
+        system_template="Analyze",
+        user_template="Analyze: {text}",
+        output_attribute="result"
+    ))
+    
+    # Mode 0: No example data
+    feedback_task, data_dict = task._prepare_feedback_task(
+        context="Test context",
+        example_data=None,
+        task_raters=None,
+        config=None
+    )
+    assert DATA_ANALYSIS_INSTRUCTIONS not in feedback_task.prompt.system_prompt
+    assert EXECUTION_ANALYSIS_INSTRUCTIONS not in feedback_task.prompt.system_prompt
+    assert data_dict["data_summary"] == "None provided"
+    assert data_dict["output_summary"] == "None available"
+    assert data_dict["observations"] == "None available"
+    
+    # Mode 1: Example data only
+    example_data = Dataset([{"text": "sample"}], data_args=["text"])
+    feedback_task, data_dict = task._prepare_feedback_task(
+        context="Test context",
+        example_data=example_data,
+        task_raters=None,
+        config=None
+    )
+    assert DATA_ANALYSIS_INSTRUCTIONS in feedback_task.prompt.system_prompt
+    assert EXECUTION_ANALYSIS_INSTRUCTIONS not in feedback_task.prompt.system_prompt
+    assert "1 samples" in data_dict["data_summary"]
+    assert "detailed analysis pending" in data_dict["data_summary"]
+    assert data_dict["output_summary"] == "None available"
+    assert "Input observations pending" in data_dict["observations"]
+    
+    # Mode 2: Example data + task raters
+    task_rater = LLMClient(language_model="llama3.1")
+    feedback_task, data_dict = task._prepare_feedback_task(
+        context="Test context",
+        example_data=example_data,
+        task_raters=task_rater,
+        config=None
+    )
+    assert DATA_ANALYSIS_INSTRUCTIONS in feedback_task.prompt.system_prompt
+    assert EXECUTION_ANALYSIS_INSTRUCTIONS in feedback_task.prompt.system_prompt
+    assert "1 samples" in data_dict["data_summary"]
+    assert "Task execution on examples pending" in data_dict["output_summary"]
+    assert "Interleaved input-output observations pending" in data_dict["observations"]
+    
+    # Test validation: task_raters without example_data
+    try:
+        task._prepare_feedback_task(
+            context="Test", 
+            example_data=None,
+            task_raters=task_rater,
+            config=None
+        )
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "example_data must be provided" in str(e)

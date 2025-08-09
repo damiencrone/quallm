@@ -188,6 +188,9 @@ class Task():
     def feedback(self,
                  raters: Union[LLMClient, List[LLMClient]],
                  context: str = "None provided",
+                 example_data: Optional[Union['Dataset', List, 'pd.DataFrame']] = None,
+                 task_raters: Optional[Union[LLMClient, List[LLMClient]]] = None,
+                 config: Optional[Union['FeedbackConfig', dict]] = None,
                  save_to_file: bool = False,
                  output_filename: Optional[str] = None) -> str:
         """
@@ -209,6 +212,9 @@ class Task():
                 the type of data it will handle, intended downstream applications, or known
                 constraints). Defaults to "None provided". Providing clear context can
                 significantly improve the relevance and depth of the feedback received.
+            example_data: Optional example data to analyze (Dataset, List, or DataFrame).
+            task_raters: LLM client(s) to run the task on examples (if provided, task will be run).
+            config: Configuration object or dict for feedback options.
             save_to_file (bool, optional): If True, the generated feedback string will
                 be saved to a text file. Defaults to False.
             output_filename (Optional[str], optional): The desired filename (including path
@@ -219,21 +225,23 @@ class Task():
         Returns:
             A string containing the feedback on the current task's definition.
         """
-        # Import here to avoid circular dependency at module load time
-        from .task_examples import TaskDefinitionFeedbackTask
         from .predictor import Predictor
         from .dataset import Dataset
 
-        feedback_task = TaskDefinitionFeedbackTask()
-
-        # Prepare the data for the feedback task
-        feedback_data_dict = {
-            "user_provided_context": context,
-            "original_system_prompt": self.prompt.system_prompt,
-            "original_user_prompt": self.prompt.user_prompt,
-            "original_response_model": self.response_model.model_json_schema()
-        }
-        dataset = Dataset(data=[feedback_data_dict], data_args=feedback_data_dict.keys())
+        # Convert example_data to Dataset if needed
+        if example_data is not None and not isinstance(example_data, Dataset):
+            example_data = Dataset(example_data, data_args=self.prompt.data_args)
+        
+        # Use helper method to prepare feedback task and data
+        feedback_task, feedback_data_dict = self._prepare_feedback_task(
+            context=context,
+            example_data=example_data,
+            task_raters=task_raters,
+            config=config
+        )
+        
+        # Create dataset from the prepared data dictionary
+        dataset = Dataset(data=[feedback_data_dict], data_args=list(feedback_data_dict.keys()))
 
         predictor = Predictor(task=feedback_task, raters=raters)
         prediction_result = predictor.predict(dataset)
@@ -258,6 +266,86 @@ Use your judgment to decide if the feedback is useful or not.""" + linebreak + l
             print(f"Feedback saved to {filename_to_use}")
 
         return feedback_string
+
+    def _prepare_feedback_task(self,
+                              context: str,
+                              example_data: Optional['Dataset'],
+                              task_raters: Optional[Union[LLMClient, List[LLMClient]]],
+                              config: Optional[Union['FeedbackConfig', dict]]) -> tuple:
+        """
+        Prepare the feedback task and data dictionary for feedback generation.
+        
+        This method handles all the logic for constructing the feedback prompt,
+        including conditional assembly based on whether example data and/or
+        task execution is requested.
+        
+        Args:
+            context: Context about the task's intended use
+            example_data: Optional Dataset with example data (already converted)
+            task_raters: Optional LLM client(s) to run the task on examples
+            config: Configuration for feedback options (currently unused in Phase 2)
+        
+        Returns:
+            Tuple of (feedback_task, feedback_data_dict) ready for prediction
+        """
+        from .task_examples import (
+            TASK_DEFINITION_FEEDBACK_CONFIG,
+            DATA_ANALYSIS_INSTRUCTIONS,
+            EXECUTION_ANALYSIS_INSTRUCTIONS,
+            TaskFeedbackResponse
+        )
+        
+        # Validate combination of parameters
+        if task_raters is not None and example_data is None:
+            raise ValueError("example_data must be provided when task_raters is specified")
+        
+        # Initialize placeholder values for new fields
+        data_summary = "None provided"
+        output_summary = "None available" 
+        observations = "None available"
+        
+        # Phase 2: Use placeholder strings when example data is provided
+        if example_data is not None:
+            data_summary = f"Example data provided: {len(example_data)} samples (detailed analysis pending implementation)"
+            
+            # If task_raters are also provided, indicate task execution would happen
+            if task_raters is not None:
+                output_summary = "Task execution on examples pending implementation"
+                observations = "Interleaved input-output observations pending implementation"
+            else:
+                # Data only mode
+                observations = "Input observations pending implementation"
+        
+        # Build conditional system prompt
+        system_prompt = TASK_DEFINITION_FEEDBACK_CONFIG.prompt.system_template
+        if example_data is not None:
+            system_prompt += "\n\n" + DATA_ANALYSIS_INSTRUCTIONS
+        if task_raters is not None:
+            system_prompt += "\n\n" + EXECUTION_ANALYSIS_INSTRUCTIONS
+        
+        # Create enhanced feedback task configuration
+        enhanced_feedback_config = TaskConfig(
+            response_model=TaskFeedbackResponse,
+            system_template=system_prompt,
+            user_template=TASK_DEFINITION_FEEDBACK_CONFIG.prompt.user_template,
+            data_args=TASK_DEFINITION_FEEDBACK_CONFIG.prompt.data_args,
+            output_attribute=TASK_DEFINITION_FEEDBACK_CONFIG.output_attribute
+        )
+        
+        feedback_task = Task.from_config(enhanced_feedback_config)
+        
+        # Prepare the data dictionary
+        feedback_data_dict = {
+            "user_provided_context": context,
+            "original_system_prompt": self.prompt.system_prompt,
+            "original_user_prompt": self.prompt.user_prompt,
+            "original_response_model": self.response_model.model_json_schema(),
+            "data_summary": data_summary,
+            "output_summary": output_summary,
+            "observations": observations
+        }
+        
+        return feedback_task, feedback_data_dict
 
     def is_attribute_list(self, attribute: str) -> bool:
         """
