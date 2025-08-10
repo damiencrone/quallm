@@ -211,7 +211,7 @@ def test_get_rater_info():
     
     rater_info = predictor.get_rater_info()
     assert len(rater_info) == 1
-    assert "test-model (temp=0.5)" in rater_info[0]
+    assert "test-model (temp=0.5, mode=" in rater_info[0]
 
 
 def test_get_error_summary_empty():

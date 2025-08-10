@@ -405,7 +405,7 @@ def test_get_output_summary_string():
         'tasks_completed': 10,
         'tasks_started': 10
     }
-    rater_info = ["test-model (temp=0.0)"]
+    rater_info = ["test-model (temp=0.0, mode=JSON)"]
     tabulations = "- field1: {value1: 5, value2: 5}"
     
     # Create a dummy prediction to call the method
@@ -424,6 +424,6 @@ def test_get_output_summary_string():
     
     summary = prediction.get_output_summary_string(error_summary, rater_info, tabulations)
     assert "Task raters:" in summary
-    assert "test-model (temp=0.0)" in summary
+    assert "test-model (temp=0.0, mode=JSON)" in summary
     assert "Success rate: 100.0%" in summary
     assert "Output distributions:" in summary

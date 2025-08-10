@@ -217,7 +217,7 @@ class Predictor:
         run_num = len(self.run_timestamps)
         self.logger.info(f"predict() called. Run number: {run_num}. n_raters: {self.n_raters}. max_workers: {max_workers}.")
         for rater_num, llm in enumerate(self.raters):
-            self.logger.info(f"Rater {rater_num}: {llm.language_model}. Temperature: {llm.temperature}.")
+            self.logger.info(f"Rater {rater_num}: {llm.language_model}. Temperature: {llm.temperature}. Mode: {llm.mode}.")
         start_time = dt.datetime.now()
         self.run_timestamps.append({"start": start_time.isoformat()})
         if not isinstance(data, Dataset):
@@ -289,7 +289,7 @@ class Predictor:
             for rater_num, n in enumerate(none_counts):
                 if n > 0:
                     llm = self.raters[rater_num]
-                    self.logger.warning(f"predict() returned {n} missing predictions for rater {rater_num} ({llm.language_model} @ temp={llm.temperature}).")
+                    self.logger.warning(f"predict() returned {n} missing predictions for rater {rater_num} ({llm.language_model} @ temp={llm.temperature}, mode={llm.mode}).")
     
     
     def validate_existing_predictions(self, predictions: Prediction, standardized_data: Dataset):
@@ -391,13 +391,13 @@ class Predictor:
     
     def get_rater_info(self) -> List[str]:
         """
-        Format rater information as list of strings.
+        Format rater information as list of strings including model, temperature, and mode.
         
         Returns:
             List of formatted rater descriptions
         
         Example:
             >>> predictor.get_rater_info()
-            ["gpt-4 (temp=0.0)", "claude-3-opus (temp=0.5)"]
+            ["gpt-4 (temp=0.0, mode=JSON)", "claude-3-opus (temp=0.5, mode=TOOLS)"]
         """
-        return [f"{r.language_model} (temp={r.temperature})" for r in self.raters]
+        return [f"{r.language_model} (temp={r.temperature}, mode={r.mode})" for r in self.raters]

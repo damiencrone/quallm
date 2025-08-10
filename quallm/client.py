@@ -88,6 +88,31 @@ class LLMClient:
             role_args=self.role_args
         )
     
+    @property
+    def mode(self) -> str:
+        """
+        Get the current Instructor mode as a readable string.
+        
+        Returns:
+            String representation of the current mode (e.g., "JSON", "MD_JSON", "TOOLS", "JSON_SCHEMA")
+            Returns "UNKNOWN" if mode cannot be determined
+        
+        Example:
+            >>> client = LLMClient()
+            >>> client.mode
+            "JSON"
+        """
+        try:
+            # Access the mode from the instructor client
+            if hasattr(self.client, 'mode') and hasattr(self.client.mode, 'name'):
+                return self.client.mode.name
+            elif hasattr(self.client, 'mode'):
+                return str(self.client.mode)
+            else:
+                return "UNKNOWN"
+        except AttributeError:
+            return "UNKNOWN"
+
     def test(self, question=None) -> str:
         """Test the LLM client with a simple request"""
         class TestResponse(BaseModel):
