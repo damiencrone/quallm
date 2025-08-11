@@ -149,6 +149,33 @@ class Task():
         
         if self.output_attribute is not None and self.output_attribute not in self.response_model.model_fields:
             raise ValueError(f"output_attribute '{self.output_attribute}' is not a top-level attribute of the response model")
+
+    def validate(self, dataset: Optional['Dataset'] = None) -> None:
+        """
+        Validate task integrity with optional dataset schema checking.
+        
+        This method consolidates existing validation logic and adds basic
+        dataset compatibility checks when provided.
+        
+        Args:
+            dataset: Optional dataset to verify data_args compatibility
+        
+        Raises:
+            ValueError: With clear diagnostic message for any validation failures
+        """
+        # Use existing validation (already implemented)
+        self.validate_output_attribute()
+        
+        # Optional dataset schema validation 
+        if dataset is not None and len(dataset) > 0:
+            expected_fields = set(self.prompt.data_args) if self.prompt.data_args else set()
+            actual_fields = set(dataset[0].keys())
+            if expected_fields and expected_fields != actual_fields:
+                raise ValueError(
+                    f"Task prompt expects data fields {sorted(expected_fields)} "
+                    f"but dataset contains {sorted(actual_fields)}. "
+                    f"Verify your dataset structure matches the task's data_args."
+                )
         
     @classmethod
     def from_config(cls, config: TaskConfig, **kwargs):
