@@ -226,6 +226,7 @@ class ModeEvaluationResults:
         if not working_modes:
             return None
             
+        # Return the mode with best validity rate, using response time as tiebreaker
         return max(working_modes.keys(), 
                   key=lambda x: (working_modes[x].overall_validity, 
                                -working_modes[x].overall_avg_response_time))
@@ -242,12 +243,19 @@ class ModeEvaluationResults:
         lines.append("=" * 50)
         
         if working_modes:
-            lines.append(f"Working modes: {', '.join(working_modes.keys())}")
+            # Sort modes by recommendation level (best first)
+            sorted_modes = sorted(working_modes.keys(),
+                                key=lambda x: (-working_modes[x].overall_validity,
+                                              working_modes[x].overall_avg_response_time))
+            
+            lines.append(f"Working modes: {', '.join(sorted_modes)}")
             recommended = self.get_recommended_mode()
             lines.append(f"Recommended mode: {recommended}")
             lines.append("")
             
-            for mode_name, result in working_modes.items():
+            # Display modes in sorted order
+            for mode_name in sorted_modes:
+                result = working_modes[mode_name]
                 lines.append(f"{mode_name}: {result.overall_validity:.1%} success, "
                            f"{result.overall_avg_response_time:.3f}s avg")
         else:
