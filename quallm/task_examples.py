@@ -257,22 +257,33 @@ Provide your feedback by populating all fields of the TaskFeedbackResponse model
 
 # Additional instructions for conditional prompt assembly
 DATA_ANALYSIS_INSTRUCTIONS = """
-When analyzing the provided example data:
-- Check alignment between data structure and prompt placeholders
-- Identify potential edge cases in the data
-- Assess whether data types match what the prompts expect
-- Look for missing values that might cause issues
-- Note the interleaved format shows input-output pairs for each observation
+The data_summary section contains schema information and statistics from the user's example dataset. The observations section shows sampled data instances that resemble the data to be processed by the task at runtime.
+
+Look for mismatches between data characteristics and task expectations. In particular, watch for:
+- Data that violates the prompt or response model's stated or implicit assumptions/expectations about content type, domain, structure, etc.; if such violations are found, the task may need to be modified to accommodate this, or the data may need processing
+- Recurring structural patterns in the data, which the prompt and/or response model do not provide adequate guidance on, that could distract or cause ambiguity
+- Inputs where the information present is insufficient to properly determine the output according to the task's current structure; these reveal either that the prompt needs to provide more specific guidance and/or that the response model is miscalibrated to the data
+- High rates of missing or empty values in required fields without adequate guidance to handle them
+
+When data characteristics suggest the task will struggle, provide specific explanations of why, and propose potential remedies.
 """
 
 EXECUTION_ANALYSIS_INSTRUCTIONS = """
-When analyzing task execution results:
-- Review output distributions for scale coverage
-- Check for systematic errors or validation issues
-- Assess whether outputs align with response model constraints
-- Identify unused enum values or scale points
-- Examine the correspondence between specific inputs and their outputs
-- Note any patterns in which inputs produce errors or unexpected results
+The task has been executed on example data. The output_summary shows success rates, error categories, and output distributions. The observations show outputs from actual task execution.
+
+Given your understanding of the task's goals, assess whether the actual outputs serve those goals, and examine the execution results for evidence of task design issues:
+
+From the output distributions and error patterns:
+- Look for evidence that the prompt and/or response model are miscalibrated to the data or too complex for the chosen task model such as: systematic validation errors, unused categories despite relevant inputs, heavy concentration in default-like values, or high rates of execution errors
+- When you identify these patterns, provide targeted feedback that identifies the specific aspects of the task design or execution that are the most likely cause(s)
+
+From the input-output pairs in observations:
+- When the model consistently produces incorrect outputs for specific input patterns, identify which part of those inputs is being misunderstood and what instruction would clarify it
+- When similar inputs yield different outputs, examine what minor variations are causing major output changes and whether the prompt needs explicit handling for these cases
+- When outputs are valid but seem misaligned with the input content, check if the prompt is leading the model toward a particular interpretation rather than responding to the actual data
+- When outputs contain internal contradictions or incomplete fields, determine if the prompt provides sufficient guidance on how different fields relate to each other and what constitutes a complete response
+
+When identifying issues, explain the specific pattern observed and propose targeted modifications to the prompt or response model that would address it.
 """
 
 TASK_DEFINITION_FEEDBACK_CONFIG = TaskConfig(
