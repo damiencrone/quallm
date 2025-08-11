@@ -122,7 +122,7 @@ def test_feedback_mode_2_integration():
     
     # Skip test if no Ollama is available
     try:
-        test_llm = LLMClient(language_model="phi3.5", temperature=0.1)
+        test_llm = LLMClient(language_model="olmo2", temperature=0.1)
         test_llm.test()
     except Exception:
         import pytest
@@ -164,8 +164,8 @@ def test_feedback_mode_2_integration():
     )
     
     # Test Mode 2: Get feedback with task execution
-    feedback_llm = LLMClient(language_model="phi3.5", temperature=0.1)
-    task_llm = LLMClient(language_model="phi3.5", temperature=0.1)
+    feedback_llm = LLMClient(language_model="olmo2", temperature=0.1)
+    task_llm = LLMClient(language_model="olmo2", temperature=0.1)
     
     feedback = task.feedback(
         raters=feedback_llm,

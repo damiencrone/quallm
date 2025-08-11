@@ -294,7 +294,7 @@ def test_end_to_end_mode_detection_with_mock():
     """End-to-end test of mode detection with mocked LLM responses"""
     
     # Mock the entire LLM interaction chain
-    with patch('quallm.instructor_mode_tester.instructor.from_openai') as mock_instructor:
+    with patch('quallm.utils.instructor_mode_tester.instructor.from_openai') as mock_instructor:
         # Mock instructor client
         mock_instructor_client = MagicMock()
         mock_instructor.return_value = mock_instructor_client
