@@ -236,3 +236,253 @@ def test_get_error_summary_empty():
     
     assert summary["total_errors"] == 0
     assert summary["error_categories"] == {}
+
+
+# Core predict_single Tests
+
+def test_predict_single_basic_success(predictor_instance, mock_llm_client, simple_task):
+    """Test basic successful prediction flow in predict_single()"""
+    # Setup mock response
+    mock_response = SimpleResponse(text="mocked_response")
+    mock_llm_client.request.return_value = mock_response
+    
+    # Setup formatted prompt mock
+    mock_prompt = MagicMock()
+    mock_prompt.system_prompt = "test system prompt"
+    mock_prompt.user_prompt = "test user prompt"
+    
+    # Call predict_single
+    result = predictor_instance.predict_single((0, mock_llm_client, mock_prompt))
+    
+    # Verify return format
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result[0] == 0  # index
+    assert isinstance(result[1], dict)
+    assert 'response' in result[1]
+    assert result[1]['response'] == [mock_response]
+    
+    # Verify LLMClient was called correctly
+    mock_llm_client.request.assert_called_once_with(
+        system_prompt="test system prompt",
+        user_prompt="test user prompt", 
+        response_model=simple_task.response_model
+    )
+    
+    # Verify timing is captured in debug logs
+    debug_logs = [log for log in predictor_instance.logs if log['level'] == 'DEBUG']
+    assert len(debug_logs) >= 2  # start and end logs
+    
+    # Check for start log
+    start_log = next((log for log in debug_logs if 'Beginning prediction' in log['message']), None)
+    assert start_log is not None
+    assert 'Index: 0' in start_log['message']
+    
+    # Check for completion log with duration
+    completion_log = next((log for log in debug_logs if 'Returning prediction' in log['message'] and 'Duration:' in log['message']), None)
+    assert completion_log is not None
+    assert 'Index: 0' in completion_log['message']
+    assert 'Duration:' in completion_log['message']
+    
+    # Verify duration format (X.XXXs)
+    import re
+    duration_match = re.search(r'Duration: (\d+\.\d{3})s', completion_log['message'])
+    assert duration_match is not None
+    duration = float(duration_match.group(1))
+    assert duration >= 0
+
+
+def test_predict_single_exception_handling(predictor_instance, mock_llm_client, simple_task):
+    """Test exception handling in predict_single()"""
+    
+    # Setup mock to raise a generic exception 
+    mock_llm_client.request.side_effect = Exception("Test exception")
+    
+    # Setup formatted prompt mock
+    mock_prompt = MagicMock()
+    mock_prompt.system_prompt = "test system prompt"
+    mock_prompt.user_prompt = "test user prompt"
+    
+    # Call predict_single
+    result = predictor_instance.predict_single((0, mock_llm_client, mock_prompt))
+    
+    # Verify return format for failure
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result[0] == 0  # index
+    assert result[1] is None  # None for failure
+    
+    # Verify error logging occurred
+    error_logs = [log for log in predictor_instance.logs if log['level'] == 'ERROR']
+    assert len(error_logs) >= 1
+    
+    error_log = error_logs[0]
+    assert 'Index: 0' in error_log['message']
+    assert 'Returning None' in error_log['message']
+    assert 'Duration:' in error_log['message']
+    assert 'Error:' in error_log['message']
+    
+    # Verify timing is still captured despite failure
+    import re
+    duration_match = re.search(r'Duration: (\d+\.\d{3})s', error_log['message'])
+    assert duration_match is not None
+    duration = float(duration_match.group(1))
+    assert duration >= 0
+
+
+def test_predict_single_timing_accuracy(predictor_instance, mock_llm_client, simple_task):
+    """Test timing accuracy in predict_single()"""
+    import time
+    
+    # Mock LLMClient with controlled delay
+    def delayed_response(*args, **kwargs):
+        time.sleep(0.1)  # 100ms delay
+        return SimpleResponse(text="delayed_response")
+    
+    mock_llm_client.request.side_effect = delayed_response
+    
+    # Setup formatted prompt mock
+    mock_prompt = MagicMock()
+    mock_prompt.system_prompt = "test system prompt"
+    mock_prompt.user_prompt = "test user prompt"
+    
+    # Call predict_single
+    result = predictor_instance.predict_single((0, mock_llm_client, mock_prompt))
+    
+    # Extract duration from logs
+    debug_logs = [log for log in predictor_instance.logs if log['level'] == 'DEBUG' and 'Duration:' in log['message']]
+    assert len(debug_logs) >= 1
+    
+    import re
+    duration_match = re.search(r'Duration: (\d+\.\d{3})s', debug_logs[0]['message'])
+    assert duration_match is not None
+    duration = float(duration_match.group(1))
+    
+    # Assert duration is approximately 0.1 seconds (±0.01s tolerance)
+    assert 0.09 <= duration <= 0.11, f"Expected duration ~0.1s, got {duration}s"
+    
+    # Verify timing precision to 3 decimal places
+    duration_str = duration_match.group(1)
+    decimal_part = duration_str.split('.')[1]
+    assert len(decimal_part) == 3, f"Expected 3 decimal places, got {len(decimal_part)}"
+
+
+def test_predict_single_parameter_handling(predictor_instance, simple_task):
+    """Test parameter handling with different values in predict_single()"""
+    # Test different index values and formatted prompts
+    test_cases = [
+        {"index": 0, "system": "system0", "user": "user0"},
+        {"index": 1, "system": "system1", "user": "user1"}, 
+        {"index": 100, "system": "system100", "user": "user100"},
+    ]
+    
+    for i, case in enumerate(test_cases):
+        # Create fresh mock client for each test case
+        mock_client = MagicMock()
+        mock_client.request.return_value = SimpleResponse(text=f"response_{case['index']}")
+        
+        # Setup formatted prompt mock
+        mock_prompt = MagicMock()
+        mock_prompt.system_prompt = case["system"]
+        mock_prompt.user_prompt = case["user"]
+        
+        # Clear logs before each test
+        predictor_instance.clear_logs()
+        
+        # Call predict_single
+        result = predictor_instance.predict_single((case["index"], mock_client, mock_prompt))
+        
+        # Verify parameters were passed correctly to LLMClient.request()
+        mock_client.request.assert_called_once_with(
+            system_prompt=case["system"],
+            user_prompt=case["user"],
+            response_model=simple_task.response_model
+        )
+        
+        # Verify correct index in return value
+        assert result[0] == case["index"]
+        
+        # Verify correct index in logging
+        debug_logs = [log for log in predictor_instance.logs if log['level'] == 'DEBUG']
+        for log in debug_logs:
+            if 'Index:' in log['message']:
+                assert f"Index: {case['index']}" in log['message']
+
+
+def test_predict_single_thread_safety_basic(simple_task):
+    """Test basic thread safety of predict_single()"""
+    import threading
+    import time
+    import random
+    
+    # Create predictor instance
+    predictor = Predictor(task=simple_task, raters=[LLMClient()])
+    
+    results = []
+    errors = []
+    
+    def worker_function(worker_id):
+        try:
+            # Create mock client with unique response time per thread
+            mock_client = MagicMock()
+            delay = random.uniform(0.01, 0.05)  # Random delay 10-50ms
+            
+            def delayed_response(*args, **kwargs):
+                time.sleep(delay)
+                return SimpleResponse(text=f"worker_{worker_id}_response")
+            
+            mock_client.request.side_effect = delayed_response
+            
+            # Setup formatted prompt mock
+            mock_prompt = MagicMock()
+            mock_prompt.system_prompt = f"system_{worker_id}"
+            mock_prompt.user_prompt = f"user_{worker_id}"
+            
+            # Call predict_single
+            result = predictor.predict_single((worker_id, mock_client, mock_prompt))
+            results.append((worker_id, result))
+            
+        except Exception as e:
+            errors.append((worker_id, e))
+    
+    # Create and start multiple threads
+    threads = []
+    num_threads = 5
+    
+    for i in range(num_threads):
+        thread = threading.Thread(target=worker_function, args=(i,))
+        threads.append(thread)
+        thread.start()
+    
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+    
+    # Verify no errors occurred
+    assert len(errors) == 0, f"Thread safety errors: {errors}"
+    
+    # Verify all threads completed
+    assert len(results) == num_threads
+    
+    # Verify each thread got correct results
+    for worker_id, result in results:
+        assert result[0] == worker_id  # correct index
+        assert result[1] is not None  # successful prediction
+        assert result[1]['response'][0].text == f"worker_{worker_id}_response"
+    
+    # Verify no log message corruption by checking each thread's logs contain correct index
+    all_logs = predictor.logs
+    
+    for worker_id in range(num_threads):
+        # Find logs for this worker
+        worker_logs = [log for log in all_logs if f"Index: {worker_id}" in log.get('message', '')]
+        assert len(worker_logs) >= 2, f"Worker {worker_id} missing logs"
+        
+        # Verify timing logs don't cross over between threads
+        for log in worker_logs:
+            # Each log should only contain this worker's index
+            assert f"Index: {worker_id}" in log['message']
+            # Should not contain other worker indices
+            for other_id in range(num_threads):
+                if other_id != worker_id:
+                    assert f"Index: {other_id}" not in log['message']
