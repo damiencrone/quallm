@@ -17,10 +17,18 @@ class TestResponse(BaseModel):
 
 def test_instructor_mode_tester_initialization():
     """Test basic initialization of InstructorModeTester"""
+    from quallm.client import DEFAULT_TEMPERATURE
+    
     tester = InstructorModeTester("test-model")
     assert tester.model == "test-model"
     assert tester.base_url == "http://localhost:11434/v1"
     assert tester.api_key == "ollama"
+    assert tester.temperature == DEFAULT_TEMPERATURE
+    
+    # Test with custom temperature
+    custom_temp = 0.5
+    tester_custom = InstructorModeTester("test-model", temperature=custom_temp)
+    assert tester_custom.temperature == custom_temp
 
 
 def test_warm_up_test_with_working_client():
@@ -94,23 +102,28 @@ def test_generate_recommendations():
     
     # Perfect validity
     recommendations = tester._generate_recommendations(1.0, instructor.Mode.JSON)
-    assert "perfectly" in recommendations[0]
+    assert "JSON mode: 100.0% success rate" in recommendations[0]
     
-    # High validity (now considered minor issues)
-    recommendations = tester._generate_recommendations(0.98, instructor.Mode.JSON)
-    assert "minor issues" in recommendations[0]
+    # High validity with timing
+    recommendations = tester._generate_recommendations(0.98, instructor.Mode.JSON, 0.2, 0.1, 0.3)
+    assert "JSON mode: 98.0% success rate" in recommendations[0]
+    assert "Response time: 0.200s avg (0.100s - 0.300s)" in recommendations[1]
     
-    # Good validity (now considered unreliable)
-    recommendations = tester._generate_recommendations(0.85, instructor.Mode.JSON)
-    assert "unreliable" in recommendations[0]
+    # Good validity with timing
+    recommendations = tester._generate_recommendations(0.85, instructor.Mode.JSON, 0.3)
+    assert "JSON mode: 85.0% success rate" in recommendations[0]
+    assert "Response time: 0.300s avg" in recommendations[1]
     
-    # Partial validity (now considered mostly fails)
-    recommendations = tester._generate_recommendations(0.50, instructor.Mode.JSON)
-    assert "mostly fails" in recommendations[0]
+    # Partial validity with errors
+    recommendations = tester._generate_recommendations(0.50, instructor.Mode.JSON, 0.5, 0.0, 0.0, ["ValidationError", "TimeoutError"])
+    assert "JSON mode: 50.0% success rate" in recommendations[0]
+    assert "Errors:" in recommendations[2]
+    assert "ValidationError" in recommendations[2]
+    assert "TimeoutError" in recommendations[2]
     
     # No validity
     recommendations = tester._generate_recommendations(0.0, instructor.Mode.JSON)
-    assert "does not work" in recommendations[0]
+    assert "JSON mode: No successful responses" in recommendations[0]
 
 
 def test_mode_test_result_to_df():
@@ -282,6 +295,7 @@ def test_find_recommended_mode_calls_evaluate_modes():
             model="test-model",
             base_url="http://localhost:11434/v1",
             api_key="ollama",
+            temperature=0.7,  # DEFAULT_TEMPERATURE
             include_default_tasks=True,
             custom_tasks=None,
             observations_per_task=20,
@@ -328,6 +342,9 @@ def test_end_to_end_mode_detection_with_mock():
                 assert recommended is not None or len(results.get_working_modes()) == 0
                 
                 print(f"Test completed successfully. Recommended mode: {recommended}")
+
+
+
 
 
 if __name__ == "__main__":
