@@ -29,6 +29,88 @@ SIMPLE_TASK_CONFIG = TaskConfig(
     output_attribute="text" # Needs to be a valid attribute of SimpleResponse
 )
 
+# Helper functions for common test patterns
+def extract_duration_from_log(log_message):
+    """Extract duration value from log message containing 'Duration: X.XXXs'"""
+    import re
+    duration_match = re.search(r'Duration: (\d+\.\d{3})s', log_message)
+    if duration_match:
+        return float(duration_match.group(1))
+    return None
+
+def assert_duration_precision(log_message, decimal_places=3):
+    """Assert that duration in log has expected decimal precision"""
+    import re
+    duration_match = re.search(r'Duration: (\d+\.\d+)s', log_message)
+    assert duration_match is not None, "Duration not found in log"
+    duration_str = duration_match.group(1)
+    decimal_part = duration_str.split('.')[1]
+    assert len(decimal_part) == decimal_places, f"Expected {decimal_places} decimal places, got {len(decimal_part)}"
+
+def get_logs_by_level(predictor, level='DEBUG'):
+    """Filter predictor logs by level"""
+    return [log for log in predictor.logs if log['level'] == level]
+
+def assert_log_contains(predictor, text, level=None):
+    """Assert that predictor logs contain specific text"""
+    logs = predictor.logs if level is None else get_logs_by_level(predictor, level)
+    messages = [log.get('message', '') for log in logs]
+    assert any(text in msg for msg in messages), f"'{text}' not found in logs"
+
+def create_mock_prompt(system="test system prompt", user="test user prompt"):
+    """Create a mock formatted prompt object"""
+    mock_prompt = MagicMock()
+    mock_prompt.system_prompt = system
+    mock_prompt.user_prompt = user
+    return mock_prompt
+
+def create_dataset_from_items(items, data_args='data_item'):
+    """Create a Dataset from a list of items or generate items from count"""
+    if isinstance(items, int):
+        items = [f"item{i}" for i in range(items)]
+    return Dataset(data=items, data_args=data_args)
+
+def assert_all_predictions_filled(predictions):
+    """Assert that all predictions in array are filled (not None)"""
+    assert np.all(predictions != None), "Some predictions still missing"
+    
+def assert_predictions_shape(predictions, expected_shape):
+    """Assert predictions have expected shape"""
+    assert predictions.shape == expected_shape, f"Expected shape {expected_shape}, got {predictions.shape}"
+
+def create_raters_from_configs(configs, mock_llm_factory):
+    """Create list of raters from (model, temp) config tuples"""
+    raters = []
+    for model, temp in configs:
+        client = mock_llm_factory(model=model, temp=temp)
+        raters.append(client)
+    return raters
+
+def assert_resumption_log(predictor, expected_count):
+    """Assert resumption log exists with expected missing count"""
+    resumption_logs = [log for log in predictor.logs if 'Resuming predictions' in log.get('message', '')]
+    assert len(resumption_logs) >= 1, "Expected resumption log message"
+    assert f"{expected_count} missing observation(s)" in resumption_logs[0]['message']
+
+def verify_response_text_pattern(predictions, pattern_prefix, indices=None):
+    """Verify that response texts match expected pattern"""
+    if indices is None:
+        # Check all predictions
+        shape = predictions.shape
+        for i in range(shape[0]):
+            for j in range(shape[1] if len(shape) > 1 else 1):
+                if predictions[i, j] is not None:
+                    response = predictions[i, j]['response'][0]
+                    assert response.text.startswith(pattern_prefix), \
+                        f"Unexpected response at [{i},{j}]: {response.text}"
+
+def assert_prediction_at_index(predictions, i, j=0, should_be_none=False):
+    """Assert prediction at specific index is None or not None as expected"""
+    if should_be_none:
+        assert predictions[i, j] is None, f"Expected None at [{i}, {j}]"
+    else:
+        assert predictions[i, j] is not None, f"Expected valid prediction at [{i}, {j}]"
+
 @pytest.fixture
 def mock_llm_client():
     client = LLMClient(language_model="mock-model")
@@ -148,7 +230,7 @@ def test_predict_resumes_partially_filled_predictions(
     assert updated_predictions[1, 0]['response'][0] == mocked_response_item2
     
     #   d) Verify that all entries are now filled
-    assert np.all(updated_predictions != None)
+    assert_all_predictions_filled(updated_predictions)
 
     #   e) Verify logs
     #      Check for a log message indicating resumption.
@@ -221,22 +303,25 @@ def test_logs_thread_safety(predictor_instance, mock_llm_client, simple_dataset)
     assert len(iterations_completed) == 5, "Not all reader threads completed"
 
 
-def test_get_rater_info():
-    """Test get_rater_info method"""
-    from pydantic import BaseModel
-    
-    # Create a simple task
-    class SimpleResponse(BaseModel):
+# Helper function for creating simple tasks
+def create_simple_task(output_attribute="answer"):
+    """Create a simple task for testing"""
+    class SimpleAnswerResponse(BaseModel):
         answer: str
     
     config = TaskConfig(
-        response_model=SimpleResponse,
+        response_model=SimpleAnswerResponse,
         system_template="Test",
         user_template="{text}",
         data_args=["text"],
-        output_attribute="answer"
+        output_attribute=output_attribute
     )
-    task = Task.from_config(config)
+    return Task.from_config(config)
+
+
+def test_get_rater_info():
+    """Test get_rater_info method"""
+    task = create_simple_task()
     
     # Create predictor with mock clients
     rater = LLMClient(language_model="test-model", temperature=0.5)
@@ -249,20 +334,7 @@ def test_get_rater_info():
 
 def test_get_error_summary_empty():
     """Test get_error_summary with no errors"""
-    from pydantic import BaseModel
-    
-    # Create a simple task
-    class SimpleResponse(BaseModel):
-        answer: str
-    
-    config = TaskConfig(
-        response_model=SimpleResponse,
-        system_template="Test",
-        user_template="{text}",
-        data_args=["text"],
-        output_attribute="answer"
-    )
-    task = Task.from_config(config)
+    task = create_simple_task()
     
     predictor = Predictor(task=task, raters=[LLMClient()])
     summary = predictor.get_error_summary()
@@ -280,9 +352,7 @@ def test_predict_single_basic_success(predictor_instance, mock_llm_client, simpl
     mock_llm_client.request.return_value = mock_response
     
     # Setup formatted prompt mock
-    mock_prompt = MagicMock()
-    mock_prompt.system_prompt = "test system prompt"
-    mock_prompt.user_prompt = "test user prompt"
+    mock_prompt = create_mock_prompt()
     
     # Call predict_single
     result = predictor_instance.predict_single((0, mock_llm_client, mock_prompt))
@@ -303,7 +373,7 @@ def test_predict_single_basic_success(predictor_instance, mock_llm_client, simpl
     )
     
     # Verify timing is captured in debug logs
-    debug_logs = [log for log in predictor_instance.logs if log['level'] == 'DEBUG']
+    debug_logs = get_logs_by_level(predictor_instance, 'DEBUG')
     assert len(debug_logs) >= 2  # start and end logs
     
     # Check for start log
@@ -318,10 +388,8 @@ def test_predict_single_basic_success(predictor_instance, mock_llm_client, simpl
     assert 'Duration:' in completion_log['message']
     
     # Verify duration format (X.XXXs)
-    import re
-    duration_match = re.search(r'Duration: (\d+\.\d{3})s', completion_log['message'])
-    assert duration_match is not None
-    duration = float(duration_match.group(1))
+    duration = extract_duration_from_log(completion_log['message'])
+    assert duration is not None
     assert duration >= 0
 
 
@@ -332,9 +400,7 @@ def test_predict_single_exception_handling(predictor_instance, mock_llm_client, 
     mock_llm_client.request.side_effect = Exception("Test exception")
     
     # Setup formatted prompt mock
-    mock_prompt = MagicMock()
-    mock_prompt.system_prompt = "test system prompt"
-    mock_prompt.user_prompt = "test user prompt"
+    mock_prompt = create_mock_prompt()
     
     # Call predict_single
     result = predictor_instance.predict_single((0, mock_llm_client, mock_prompt))
@@ -346,7 +412,7 @@ def test_predict_single_exception_handling(predictor_instance, mock_llm_client, 
     assert result[1] is None  # None for failure
     
     # Verify error logging occurred
-    error_logs = [log for log in predictor_instance.logs if log['level'] == 'ERROR']
+    error_logs = get_logs_by_level(predictor_instance, 'ERROR')
     assert len(error_logs) >= 1
     
     error_log = error_logs[0]
@@ -356,10 +422,8 @@ def test_predict_single_exception_handling(predictor_instance, mock_llm_client, 
     assert 'Error:' in error_log['message']
     
     # Verify timing is still captured despite failure
-    import re
-    duration_match = re.search(r'Duration: (\d+\.\d{3})s', error_log['message'])
-    assert duration_match is not None
-    duration = float(duration_match.group(1))
+    duration = extract_duration_from_log(error_log['message'])
+    assert duration is not None
     assert duration >= 0
 
 
@@ -375,29 +439,23 @@ def test_predict_single_timing_accuracy(predictor_instance, mock_llm_client, sim
     mock_llm_client.request.side_effect = delayed_response
     
     # Setup formatted prompt mock
-    mock_prompt = MagicMock()
-    mock_prompt.system_prompt = "test system prompt"
-    mock_prompt.user_prompt = "test user prompt"
+    mock_prompt = create_mock_prompt()
     
     # Call predict_single
     result = predictor_instance.predict_single((0, mock_llm_client, mock_prompt))
     
     # Extract duration from logs
-    debug_logs = [log for log in predictor_instance.logs if log['level'] == 'DEBUG' and 'Duration:' in log['message']]
+    debug_logs = [log for log in get_logs_by_level(predictor_instance, 'DEBUG') if 'Duration:' in log['message']]
     assert len(debug_logs) >= 1
     
-    import re
-    duration_match = re.search(r'Duration: (\d+\.\d{3})s', debug_logs[0]['message'])
-    assert duration_match is not None
-    duration = float(duration_match.group(1))
+    duration = extract_duration_from_log(debug_logs[0]['message'])
+    assert duration is not None
     
     # Assert duration is approximately 0.1 seconds (±0.01s tolerance)
     assert 0.09 <= duration <= 0.11, f"Expected duration ~0.1s, got {duration}s"
     
     # Verify timing precision to 3 decimal places
-    duration_str = duration_match.group(1)
-    decimal_part = duration_str.split('.')[1]
-    assert len(decimal_part) == 3, f"Expected 3 decimal places, got {len(decimal_part)}"
+    assert_duration_precision(debug_logs[0]['message'], decimal_places=3)
 
 
 def test_predict_single_parameter_handling(predictor_instance, simple_task):
@@ -436,7 +494,7 @@ def test_predict_single_parameter_handling(predictor_instance, simple_task):
         assert result[0] == case["index"]
         
         # Verify correct index in logging
-        debug_logs = [log for log in predictor_instance.logs if log['level'] == 'DEBUG']
+        debug_logs = get_logs_by_level(predictor_instance, 'DEBUG')
         for log in debug_logs:
             if 'Index:' in log['message']:
                 assert f"Index: {case['index']}" in log['message']
@@ -520,14 +578,10 @@ def test_predict_single_thread_safety_basic(simple_task):
                 if other_id != worker_id:
                     assert f"Index: {other_id}" not in log['message']
 
-
-# Phase 0b Tests: Expanded Predictor Tests
-
 def test_predict_parallel_execution_success(simple_task, mock_llm_factory):
     """Test parallel execution with variable response times and verify parallelism occurs"""
     # Create dataset with 10+ items
-    data_items = [f"item{i}" for i in range(12)]
-    dataset = Dataset(data=data_items, data_args='data_item')
+    dataset = create_dataset_from_items(12)
     
     # Create mock client with variable response times (50-200ms)
     delays = [0.05, 0.1, 0.15, 0.2] * 3  # Cycle delays for variety
@@ -558,10 +612,10 @@ def test_predict_parallel_execution_success(simple_task, mock_llm_factory):
     
     # Assertions
     # All predictions should complete successfully (no None values)
-    assert np.all(predictions != None), "Some predictions failed unexpectedly"
+    assert_all_predictions_filled(predictions)
     
     # Results should maintain correct (observation, rater) ordering
-    assert predictions.shape == (12, 1)
+    assert_predictions_shape(predictions, (12, 1))
     # Note: In parallel execution, the response counter may not match observation order
     # Instead, verify all responses are valid and from the correct model
     for i in range(12):
@@ -574,19 +628,18 @@ def test_predict_parallel_execution_success(simple_task, mock_llm_factory):
     assert total_time < expected_sequential_time * 0.9, f"Expected parallel execution to be faster than {expected_sequential_time * 0.9:.2f}s, got {total_time:.2f}s"
     
     # Debug logs should show all predictions started
-    debug_logs = [log for log in predictor.logs if log['level'] == 'DEBUG' and 'Beginning prediction' in log['message']]
+    debug_logs = [log for log in get_logs_by_level(predictor, 'DEBUG') if 'Beginning prediction' in log['message']]
     assert len(debug_logs) == 12, f"Expected 12 start logs, got {len(debug_logs)}"
     
     # Verify all predictions completed - this is the main success criteria
-    completion_logs = [log for log in predictor.logs if log['level'] == 'DEBUG' and 'Returning prediction' in log['message']]
+    completion_logs = [log for log in get_logs_by_level(predictor, 'DEBUG') if 'Returning prediction' in log['message']]
     assert len(completion_logs) == 12, f"Expected 12 completion logs, got {len(completion_logs)}"
 
 
 def test_predict_parallel_with_failures(simple_task, mock_llm_factory):
     """Test parallel execution with specific failure indices and verify partial success handling"""
     # Dataset of 10 items
-    data_items = [f"item{i}" for i in range(10)]
-    dataset = Dataset(data=data_items, data_args='data_item')
+    dataset = create_dataset_from_items(10)
     
     # Mock LLMClient to raise Exception on indices [3, 7]
     mock_client = mock_llm_factory(
@@ -602,19 +655,19 @@ def test_predict_parallel_with_failures(simple_task, mock_llm_factory):
     
     # Assertions
     # predictions[3,0] and predictions[7,0] should be None
-    assert predictions[3, 0] is None, "Expected failure at index 3"
-    assert predictions[7, 0] is None, "Expected failure at index 7"
+    assert_prediction_at_index(predictions, 3, 0, should_be_none=True)
+    assert_prediction_at_index(predictions, 7, 0, should_be_none=True)
     
     # Other indices should contain valid predictions
     for i in range(10):
         if i not in [3, 7]:
-            assert predictions[i, 0] is not None, f"Expected success at index {i}"
+            assert_prediction_at_index(predictions, i, 0)
             response = predictions[i, 0]['response'][0]
             # In parallel execution, response counter might not match observation order
             assert response.text.startswith("test-failures_response_"), f"Unexpected response format: {response.text}"
     
     # ERROR logs should contain error messages (indices may vary due to parallel execution)
-    error_logs = [log for log in predictor.logs if log['level'] == 'ERROR']
+    error_logs = get_logs_by_level(predictor, 'ERROR')
     
     # Should have exactly 2 error logs (for the two failures)
     assert len(error_logs) == 2, f"Expected 2 error logs, got {len(error_logs)}"
@@ -662,8 +715,7 @@ def test_predict_resumable_patterns(simple_task, mock_llm_factory, fill_pattern)
             none_count += 1
     
     # Create dataset matching the pattern size
-    data_items = [f"item{i}" for i in range(n_obs)]
-    dataset = Dataset(data=data_items, data_args='data_item')
+    dataset = create_dataset_from_items(n_obs)
     
     # Create mock client
     mock_client = mock_llm_factory(model="test-resume", temp=0.0)
@@ -674,11 +726,7 @@ def test_predict_resumable_patterns(simple_task, mock_llm_factory, fill_pattern)
     
     # Assertions
     # Verify "Resuming predictions for N missing" log
-    resumption_logs = [log for log in predictor.logs if 'Resuming predictions' in log.get('message', '')]
-    assert len(resumption_logs) >= 1, "Expected resumption log message"
-    
-    resumption_msg = resumption_logs[0]['message']
-    assert f"{none_count} missing observation(s)" in resumption_msg
+    assert_resumption_log(predictor, none_count)
     
     # Verify pre-filled values unchanged
     for i, val in enumerate(fill_pattern):
@@ -689,7 +737,7 @@ def test_predict_resumable_patterns(simple_task, mock_llm_factory, fill_pattern)
     assert mock_client.request.call_count == none_count, f"Expected {none_count} calls, got {mock_client.request.call_count}"
     
     # Verify all predictions are now filled
-    assert np.all(updated_predictions != None), "Some predictions still missing after resumption"
+    assert_all_predictions_filled(updated_predictions)
 
 
 def test_predict_multiple_raters(simple_task, mock_llm_factory):
@@ -701,14 +749,10 @@ def test_predict_multiple_raters(simple_task, mock_llm_factory):
         ("llama", 0.9)
     ]
     
-    raters = []
-    for model, temp in rater_configs:
-        client = mock_llm_factory(model=model, temp=temp)
-        raters.append(client)
+    raters = create_raters_from_configs(rater_configs, mock_llm_factory)
     
     # Dataset with 5 items
-    data_items = [f"item{i}" for i in range(5)]
-    dataset = Dataset(data=data_items, data_args='data_item')
+    dataset = create_dataset_from_items(5)
     
     # Create predictor with multiple raters
     predictor = Predictor(task=simple_task, raters=raters)
@@ -716,7 +760,7 @@ def test_predict_multiple_raters(simple_task, mock_llm_factory):
     
     # Assertions
     # predictions.shape should be (5, 3)
-    assert predictions.shape == (5, 3), f"Expected shape (5, 3), got {predictions.shape}"
+    assert_predictions_shape(predictions, (5, 3))
     
     # get_rater_info() should return list of 3 formatted strings
     rater_info = predictor.get_rater_info()
@@ -752,7 +796,7 @@ def test_predict_multiple_raters(simple_task, mock_llm_factory):
     # Verify all predictions are filled correctly by each rater
     for obs in range(5):
         for rater in range(3):
-            assert predictions[obs, rater] is not None, f"Missing prediction at [{obs}, {rater}]"
+            assert_prediction_at_index(predictions, obs, rater)
             response = predictions[obs, rater]['response'][0]
             expected_model = rater_configs[rater][0]
             # In parallel execution, response counter might not be predictable
@@ -773,10 +817,7 @@ def test_predict_resumable_multi_rater_partial(simple_task, mock_llm_factory):
     
     # Create raters
     rater_configs = [("rater0", 0.1), ("rater1", 0.5), ("rater2", 0.9)]
-    raters = []
-    for model, temp in rater_configs:
-        client = mock_llm_factory(model=model, temp=temp)
-        raters.append(client)
+    raters = create_raters_from_configs(rater_configs, mock_llm_factory)
     
     # Fill pattern as described
     # Rater 0: all filled
@@ -796,8 +837,7 @@ def test_predict_resumable_multi_rater_partial(simple_task, mock_llm_factory):
         existing_predictions[obs, 2] = None
     
     # Create dataset and predictor
-    data_items = [f"item{i}" for i in range(4)]
-    dataset = Dataset(data=data_items, data_args='data_item')
+    dataset = create_dataset_from_items(4)
     
     predictor = Predictor(task=simple_task, raters=raters)
     updated_predictions = predictor.predict(data=dataset, predictions=existing_predictions)
@@ -824,12 +864,10 @@ def test_predict_resumable_multi_rater_partial(simple_task, mock_llm_factory):
         assert response.text == f"rater1_prefilled_{obs}", f"Rater 1, obs {obs} was changed"
     
     # All predictions should now be filled
-    assert np.all(updated_predictions != None), "Some predictions still missing after resumption"
+    assert_all_predictions_filled(updated_predictions)
     
     # Check resumption log mentions correct count (2 + 4 = 6 missing)
-    resumption_logs = [log for log in predictor.logs if 'Resuming predictions' in log.get('message', '')]
-    assert len(resumption_logs) >= 1, "Expected resumption log"
-    assert "6 missing observation(s)" in resumption_logs[0]['message']
+    assert_resumption_log(predictor, 6)
 
 
 def test_echo_and_log_levels(simple_task, mock_llm_factory, capsys):
@@ -912,7 +950,7 @@ def test_dataset_input_formats(simple_task, mock_llm_factory):
         predictions = predictor.predict(data=data_input)
         
         # Assertions
-        assert predictions.shape == expected_shape, f"{description}: Expected shape {expected_shape}, got {predictions.shape}"
+        assert_predictions_shape(predictions, expected_shape)
         
         # All predictions should be successful
         assert np.all(predictions != None), f"{description}: Some predictions failed"
