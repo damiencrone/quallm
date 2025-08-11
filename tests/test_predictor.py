@@ -105,11 +105,18 @@ def verify_response_text_pattern(predictions, pattern_prefix, indices=None):
                         f"Unexpected response at [{i},{j}]: {response.text}"
 
 def assert_prediction_at_index(predictions, i, j=0, should_be_none=False):
-    """Assert prediction at specific index is None or not None as expected"""
+    """Assert prediction at specific index has error or valid response as expected"""
+    pred = predictions[i, j]
     if should_be_none:
-        assert predictions[i, j] is None, f"Expected None at [{i}, {j}]"
+        # Error responses are dicts with response=None and error metadata
+        assert isinstance(pred, dict), f"Expected dict at [{i}, {j}]"
+        assert pred.get('response') is None, f"Expected None response at [{i}, {j}]"
+        assert 'metadata' in pred
+        assert pred['metadata'].get('success') is False
     else:
-        assert predictions[i, j] is not None, f"Expected valid prediction at [{i}, {j}]"
+        assert pred is not None, f"Expected valid prediction at [{i}, {j}]"
+        if isinstance(pred, dict):
+            assert pred.get('response') is not None, f"Expected valid response at [{i}, {j}]"
 
 @pytest.fixture
 def mock_llm_client():
@@ -409,7 +416,13 @@ def test_predict_single_exception_handling(predictor_instance, mock_llm_client, 
     assert isinstance(result, tuple)
     assert len(result) == 2
     assert result[0] == 0  # index
-    assert result[1] is None  # None for failure
+    # Now returns dict with metadata even on failure
+    assert isinstance(result[1], dict)
+    assert result[1]['response'] is None  # None response for failure
+    assert 'metadata' in result[1]
+    assert result[1]['metadata']['success'] is False
+    assert result[1]['metadata']['error_type'] == 'Exception'
+    assert result[1]['metadata']['error_message'] == 'Test exception'
     
     # Verify error logging occurred
     error_logs = get_logs_by_level(predictor_instance, 'ERROR')
@@ -1125,10 +1138,16 @@ def test_get_error_summary_with_various_errors(simple_task):
     
     # Verify predictions match expected success/failure pattern
     for i, expected_error in enumerate(error_schedule):
+        pred = predictions[i, 0]
         if expected_error is None:
-            assert predictions[i, 0] is not None, f"Expected success at index {i}"
+            assert pred is not None, f"Expected success at index {i}"
+            assert isinstance(pred, dict)
+            assert pred.get('response') is not None, f"Expected valid response at index {i}"
         else:
-            assert predictions[i, 0] is None, f"Expected failure at index {i}"
+            # Error case - should have dict with response=None
+            assert isinstance(pred, dict), f"Expected dict at index {i}"
+            assert pred.get('response') is None, f"Expected None response at index {i}"
+            assert pred.get('metadata', {}).get('success') is False
 
 
 def test_validate_existing_predictions_errors(simple_task, mock_llm_factory):
@@ -1184,3 +1203,118 @@ def test_validate_existing_predictions_errors(simple_task, mock_llm_factory):
     assert np.sum(result != None) == 2  # Both should now be filled
     assert result[0, 0]['response'][0] == response  # First should be unchanged
     assert result[1, 0] is not None  # Second should now be filled
+
+
+def test_predict_single_metadata_capture(predictor_instance, mock_llm_client):
+    """Test that predict_single captures metadata correctly."""
+    # Setup
+    mock_llm_client.request.return_value = SimpleResponse(text="test response")
+    formatted_prompt = create_mock_prompt()
+    
+    # Test successful prediction
+    index, result = predictor_instance.predict_single((0, mock_llm_client, formatted_prompt))
+    
+    # Verify metadata structure
+    assert result is not None
+    assert 'response' in result
+    assert 'metadata' in result
+    
+    metadata = result['metadata']
+    assert 'start_time' in metadata
+    assert 'end_time' in metadata
+    assert 'duration' in metadata
+    assert 'success' in metadata
+    assert 'index' in metadata
+    
+    # Verify metadata values
+    assert metadata['success'] is True
+    assert metadata['index'] == 0
+    assert isinstance(metadata['duration'], float)
+    assert metadata['duration'] >= 0
+    
+    # Test failed prediction
+    mock_llm_client.request.side_effect = ValueError("Test error")
+    index, result = predictor_instance.predict_single((1, mock_llm_client, formatted_prompt))
+    
+    # Verify error metadata
+    assert result is not None
+    assert result['response'] is None
+    assert 'metadata' in result
+    
+    metadata = result['metadata']
+    assert metadata['success'] is False
+    assert 'error_type' in metadata
+    assert 'error_message' in metadata
+    assert metadata['error_type'] == 'ValueError'
+    assert metadata['error_message'] == 'Test error'
+
+
+def test_metadata_stored_in_predictions(predictor_instance, simple_dataset):
+    """Test that metadata is correctly stored in Prediction array during predict()."""
+    # Setup mock responses
+    predictor_instance.raters[0].request.return_value = SimpleResponse(text="response")
+    
+    # Run predictions
+    predictions = predictor_instance.predict(simple_dataset, max_workers=1)
+    
+    # Verify metadata is stored
+    for i in range(predictions.n_obs):
+        for j in range(predictions.n_raters):
+            item = predictions[i, j]
+            assert item is not None
+            assert 'response' in item
+            assert 'metadata' in item
+            
+            metadata = item['metadata']
+            assert 'duration' in metadata
+            assert 'success' in metadata
+            assert metadata['success'] is True
+
+
+def test_metadata_backward_compatibility(predictor_instance, simple_dataset):
+    """Test that existing code patterns continue to work with metadata."""
+    # Setup
+    predictor_instance.raters[0].request.return_value = SimpleResponse(text="test")
+    
+    # Run predictions
+    predictions = predictor_instance.predict(simple_dataset)
+    
+    # Old-style access patterns should still work
+    item = predictions[0, 0]
+    assert 'response' in item
+    assert item['response'][0].text == "test"
+    
+    # get() method should work unchanged
+    texts = predictions.get('text')
+    assert texts[0] == "test"
+    
+    # expand() should work unchanged
+    df = predictions.expand()
+    assert 'text' in df.columns
+    assert len(df) == 3
+
+
+def test_metadata_with_parallel_processing(predictor_instance, simple_dataset):
+    """Test metadata capture works correctly with parallel processing."""
+    # Setup
+    predictor_instance.raters[0].request.return_value = SimpleResponse(text="parallel")
+    
+    # Run parallel predictions
+    predictions = predictor_instance.predict(simple_dataset, max_workers=2)
+    
+    # Verify all predictions have metadata
+    metadata_count = 0
+    for i in range(predictions.n_obs):
+        for j in range(predictions.n_raters):
+            item = predictions[i, j]
+            if item is not None and 'metadata' in item:
+                metadata_count += 1
+    
+    assert metadata_count == predictions.n_obs * predictions.n_raters
+    
+    # Verify timing data is reasonable
+    for i in range(predictions.n_obs):
+        item = predictions[i, 0]
+        if item and 'metadata' in item:
+            duration = item['metadata'].get('duration')
+            assert 0 <= duration < 10  # Reasonable duration

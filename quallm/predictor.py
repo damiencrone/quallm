@@ -146,10 +146,16 @@ class Predictor:
 
 
     def predict_single(self, params):
-        """Generate a prediction for a single observation"""
+        """Generate a prediction for a single observation with metadata."""
         index, language_model, formatted_prompt = params
         start_time = dt.datetime.now()
         self.logger.debug(f"Index: {index}. Beginning prediction.")
+        
+        metadata = {
+            'start_time': start_time.isoformat(),
+            'index': index
+        }
+        
         try:
             response = language_model.request(
                 system_prompt=formatted_prompt.system_prompt,
@@ -158,13 +164,32 @@ class Predictor:
             )
             end_time = dt.datetime.now()
             pred_time = (end_time - start_time).total_seconds()
+            
+            metadata.update({
+                'end_time': end_time.isoformat(),
+                'duration': pred_time,
+                'success': True
+            })
+            
             self.logger.debug(f"Index: {index}. Returning prediction. Duration: {pred_time:.3f}s.")
-            return (index, {'response': [response]})
+            self.logger.debug(f"Index: {index}. Metadata transition: returning structured metadata with response")
+            return (index, {'response': [response], 'metadata': metadata})
+            
         except Exception as e:
             end_time = dt.datetime.now()
             pred_time = (end_time - start_time).total_seconds()
+            
+            metadata.update({
+                'end_time': end_time.isoformat(),
+                'duration': pred_time,
+                'success': False,
+                'error_type': e.__class__.__name__,
+                'error_message': str(e)
+            })
+            
             self.logger.error(f"Index: {index}. Returning None. Duration: {pred_time:.3f}s. Error: {e}")
-            return (index, None)
+            self.logger.debug(f"Index: {index}. Metadata transition: returning structured metadata with None response")
+            return (index, {'response': None, 'metadata': metadata})
 
 
     def predict(self,
@@ -231,12 +256,25 @@ class Predictor:
                                              n_raters=self.n_raters)
         else:
             self.validate_existing_predictions(predictions, standardized_data)
-            self.logger.info(f"Resuming predictions for {np.sum(predictions == None)} missing observation(s) out of {predictions.size} total observation(s).")
+            # Count missing/failed predictions
+            missing_count = 0
+            for item in predictions.flat:
+                if item is None or (isinstance(item, dict) and item.get('response') is None):
+                    missing_count += 1
+            self.logger.info(f"Resuming predictions for {missing_count} missing observation(s) out of {predictions.size} total observation(s).")
         # Prepare prediction tasks
         tasks = []
         for i, data_point in enumerate(standardized_data):
             for j in range(self.n_raters):
-                if predictions[i,j] is None:  # Only create tasks for unmade predictions
+                # Check if prediction is missing or failed
+                pred = predictions[i,j]
+                needs_prediction = False
+                if pred is None:
+                    needs_prediction = True
+                elif isinstance(pred, dict) and pred.get('response') is None:
+                    needs_prediction = True
+                
+                if needs_prediction:  # Only create tasks for unmade/failed predictions
                     language_model = self.raters[j]
                     role_and_data_args = language_model.role_args | data_point
                     formatted_prompt = self.task.prompt.insert_role_and_data(**role_and_data_args)
@@ -266,9 +304,20 @@ class Predictor:
                              file=sys.stdout):
                 results.append(self.predict_single(task))
         # Fill in predictions
+        metadata_count = 0
         for index, result in results:
             if result is not None:
                 predictions[index] = result
+                # Log metadata transition debugging info
+                if isinstance(result, dict) and 'metadata' in result:
+                    metadata_count += 1
+                    
+        # Log metadata transition summary
+        if metadata_count > 0:
+            self.logger.debug(f"Metadata transition: Stored {metadata_count} predictions with structured metadata")
+        else:
+            self.logger.debug(f"Metadata transition: No metadata found in results (backward compatibility mode)")
+        
         self._log_completion(start_time, run_num, predictions)
         return predictions
     
@@ -281,11 +330,28 @@ class Predictor:
         self.run_timestamps[run_num-1]["run_duration_sec"] = run_duration
         self.logger.info(f"predict() finished in {run_duration:.3f}s")
         n_pred = predictions.size
-        n_success = np.sum(predictions != None)
-        n_missing = np.sum(predictions == None)
+        # Count successful predictions (dicts with non-None response)
+        n_success = 0
+        n_missing = 0
+        for item in predictions.flat:
+            if item is None:
+                n_missing += 1
+            elif isinstance(item, dict) and item.get('response') is None:
+                n_missing += 1
+            else:
+                n_success += 1
         self.logger.info(f"predict() returned {n_success} successful predictions and {n_missing} missing predictions out of {n_pred} total predictions")
         if n_missing > 0:
-            none_counts = np.sum(predictions == None, axis=0)
+            # Count missing predictions per rater
+            none_counts = []
+            for rater_num in range(predictions.shape[1]):
+                count = 0
+                for i in range(predictions.shape[0]):
+                    item = predictions[i, rater_num]
+                    if item is None or (isinstance(item, dict) and item.get('response') is None):
+                        count += 1
+                none_counts.append(count)
+            
             for rater_num, n in enumerate(none_counts):
                 if n > 0:
                     llm = self.raters[rater_num]
@@ -294,7 +360,18 @@ class Predictor:
     
     def validate_existing_predictions(self, predictions: Prediction, standardized_data: Dataset):
         assert isinstance(predictions, Prediction), f"Received predictions object of type {type(predictions)}; predictions must be an instance of Prediction"
-        assert np.any(predictions == None), "All predictions have already been made; if passing a preexisting Prediction object, it must have at least one missing value"
+        
+        # Check if there's at least one missing/error prediction to resume
+        has_missing = False
+        for item in predictions.flat:
+            if item is None:
+                has_missing = True
+                break
+            elif isinstance(item, dict) and item.get('response') is None:
+                has_missing = True
+                break
+        
+        assert has_missing, "All predictions have already been made; if passing a preexisting Prediction object, it must have at least one missing value"
         assert predictions.shape == (len(standardized_data), self.n_raters), f"Shape of predictions {predictions.shape} does not match number of observations {len(standardized_data)} and raters {self.n_raters}"
         
     

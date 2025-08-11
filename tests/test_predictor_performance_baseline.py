@@ -229,7 +229,11 @@ class TestEndToEndIntegration:
         
         # Verify partial success
         assert predictions[0, 0] is not None
-        assert predictions[1, 0] is None
+        # Error responses are now dicts with response=None
+        pred_1 = predictions[1, 0]
+        assert isinstance(pred_1, dict)
+        assert pred_1.get('response') is None
+        assert pred_1.get('metadata', {}).get('success') is False
         assert predictions[2, 0] is not None
         
         # Verify error logged
@@ -348,7 +352,11 @@ class TestBackwardCompatibility:
         
         # First run with failure
         predictions = predictor.predict(dataset, echo=False)
-        assert predictions[1, 0] is None  # Failed item
+        # Error responses are now dicts with response=None
+        pred_1 = predictions[1, 0]
+        assert isinstance(pred_1, dict)
+        assert pred_1.get('response') is None  # Failed item
+        assert pred_1.get('metadata', {}).get('success') is False
         
         # Resume
         mocks[0].request.side_effect = None
@@ -420,8 +428,18 @@ class TestLogFormatValidation:
         assert summary['error_categories']['connection'] == 2
         
         # Verify pattern
-        assert predictions[0, 0] is not None and predictions[1, 0] is None
-        assert predictions[2, 0] is not None and predictions[3, 0] is None
+        assert predictions[0, 0] is not None
+        # Error responses are now dicts with response=None
+        pred_1 = predictions[1, 0]
+        assert isinstance(pred_1, dict)
+        assert pred_1.get('response') is None
+        assert pred_1.get('metadata', {}).get('success') is False
+        assert predictions[2, 0] is not None
+        # Error response for index 3
+        pred_3 = predictions[3, 0]
+        assert isinstance(pred_3, dict)
+        assert pred_3.get('response') is None
+        assert pred_3.get('metadata', {}).get('success') is False
 
 
 class TestRegressionDetection:

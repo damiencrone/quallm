@@ -4,6 +4,7 @@ import pandas as pd
 from quallm.tasks import LabelSet, SingleLabelCategorizationTask
 from quallm.dataset import Dataset
 from quallm.predictor import Predictor
+from quallm.prediction import Prediction
 from quallm.client import LLMClient
 
 DEFAULT_MODEL = "llama3.1"
@@ -549,3 +550,109 @@ def test_get_output_summary_string():
     assert "test-model (temp=0.0, mode=JSON)" in summary
     assert "Success rate: 100.0%" in summary
     assert "Output distributions:" in summary
+
+
+def test_get_timing_method():
+    """Test the get_timing() method for accessing timing metadata."""
+    # Create a prediction with metadata
+    task = SingleLabelCategorizationTask(category_class=labels)
+    predictor = Predictor(raters=llm, task=task)
+    dataset = Dataset(['test1', 'test2'], 'input_text')
+    predictions = predictor.predict(dataset, echo=False)
+    
+    # Test specific prediction timing
+    timing = predictions.get_timing(0, 0)
+    if timing is not None:  # May be None if prediction failed
+        assert 'duration' in timing
+        assert 'start_time' in timing
+        assert 'end_time' in timing
+        assert isinstance(timing['duration'], float)
+        assert timing['duration'] >= 0
+    
+    # Test observation-level timing (all raters)
+    timings = predictions.get_timing(0)
+    assert isinstance(timings, np.ndarray)
+    assert timings.shape == (predictions.n_raters,)
+    
+    # Test full array timing
+    all_timings = predictions.get_timing()
+    assert isinstance(all_timings, np.ndarray)
+    assert all_timings.shape == predictions.shape
+    
+    # Test backward compatibility - predictions without metadata
+    old_prediction = Prediction.__new__(Prediction, task, 2, 1)
+    old_prediction[0, 0] = {'response': [predictions[0, 0]['response'][0]]}  # No metadata
+    
+    timing = old_prediction.get_timing(0, 0)
+    assert timing is None  # Should handle gracefully
+    
+    all_timings = old_prediction.get_timing()
+    assert all_timings.shape == old_prediction.shape
+    assert all(t is None for t in all_timings.flat)
+
+
+def test_get_metadata_method():
+    """Test the get_metadata() method for general metadata access."""
+    # Create a prediction with metadata
+    task = SingleLabelCategorizationTask(category_class=labels)
+    predictor = Predictor(raters=llm, task=task)
+    dataset = Dataset(['test1', 'test2'], 'input_text')
+    predictions = predictor.predict(dataset, echo=False)
+    
+    # Test getting specific metadata key
+    durations = predictions.get_metadata('duration')
+    assert isinstance(durations, np.ndarray)
+    assert durations.shape == predictions.shape
+    for duration in durations.flat:
+        if duration is not None:
+            assert isinstance(duration, float)
+            assert duration >= 0
+    
+    # Test getting all metadata for specific indices
+    metadata = predictions.get_metadata(indices=(0, 0))
+    if metadata is not None:  # May be None if no metadata
+        assert isinstance(metadata, dict)
+        if 'duration' in metadata:
+            assert 'success' in metadata
+            assert 'start_time' in metadata
+    
+    # Test getting specific key for specific indices
+    success = predictions.get_metadata('success', indices=(0, 0))
+    if success is not None:
+        assert isinstance(success, bool)
+    
+    # Test non-existent key
+    missing = predictions.get_metadata('nonexistent_key')
+    assert isinstance(missing, np.ndarray)
+    assert missing.shape == predictions.shape
+    assert all(v is None for v in missing.flat)
+    
+    # Test backward compatibility - predictions without metadata
+    old_prediction = Prediction.__new__(Prediction, task, 2, 1)
+    old_prediction[0, 0] = {'response': [predictions[0, 0]['response'][0]]}  # No metadata
+    
+    metadata = old_prediction.get_metadata(indices=(0, 0))
+    assert metadata is None
+    
+    durations = old_prediction.get_metadata('duration')
+    assert all(d is None for d in durations.flat)
+
+
+def test_metadata_integration_with_expand():
+    """Test that expand() method still works with metadata present."""
+    # Create predictions with metadata
+    task = SingleLabelCategorizationTask(category_class=labels)
+    predictor = Predictor(raters=llm, task=task)
+    dataset = Dataset(['test1', 'test2'], 'input_text')
+    predictions = predictor.predict(dataset, echo=False)
+    
+    # expand() should work unchanged
+    df = predictions.expand()
+    assert isinstance(df, pd.DataFrame)
+    assert 'code' in df.columns
+    assert 'confidence' in df.columns
+    assert len(df) == 2
+    
+    # Metadata should not appear in expanded DataFrame by default
+    assert 'metadata' not in df.columns
+    assert 'duration' not in df.columns

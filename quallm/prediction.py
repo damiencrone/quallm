@@ -350,6 +350,121 @@ class Prediction(np.ndarray):
         
         return "\n".join(formatted_lines)
     
+    def get_timing(self, i=None, j=None) -> Union[Dict, np.ndarray]:
+        """
+        Get timing metadata for predictions.
+        
+        Args:
+            i: Observation index (optional)
+            j: Rater index (optional)
+            
+        Returns:
+            If both i and j specified: Dict with timing for that prediction
+            If only i specified: Array of timing dicts for that observation
+            If neither specified: Full array of all timing metadata
+            
+        Examples:
+            >>> # Get timing for specific prediction
+            >>> prediction.get_timing(0, 0)
+            {'duration': 2.145, 'start_time': '2024-01-15T10:30:00', 'end_time': '2024-01-15T10:30:02'}
+            
+            >>> # Get timing for all raters for observation 0
+            >>> prediction.get_timing(0)
+            array([{'duration': 2.145, ...}, {'duration': 1.932, ...}])
+            
+            >>> # Get all timing metadata
+            >>> prediction.get_timing()
+            array([[{'duration': 2.145, ...}, {'duration': 1.932, ...}],
+                   [{'duration': 1.023, ...}, {'duration': 2.451, ...}]])
+        """
+        if i is not None and j is not None:
+            item = self[i, j]
+            if item and 'metadata' in item:
+                metadata = item['metadata']
+                return {
+                    'duration': metadata.get('duration'),
+                    'start_time': metadata.get('start_time'),
+                    'end_time': metadata.get('end_time')
+                }
+            return None
+        elif i is not None:
+            return np.array([self.get_timing(i, j) for j in range(self.n_raters)])
+        else:
+            result = np.empty((self.n_obs, self.n_raters), dtype=object)
+            for idx in np.ndindex(self.shape):
+                result[idx] = self.get_timing(idx[0], idx[1])
+            return result
+
+    def get_metadata(self, key: str = None, indices=None) -> Union[Any, Dict, np.ndarray]:
+        """
+        Get metadata for predictions.
+        
+        Args:
+            key: Specific metadata key to extract (e.g., 'duration', 'error_type')
+            indices: Tuple of (i, j) or just i for specific predictions
+            
+        Returns:
+            If key is specified: Array/value of that metadata key
+            If key is None: Full metadata dict(s)
+            
+        Examples:
+            >>> # Get all durations
+            >>> prediction.get_metadata('duration')
+            array([[2.145, 1.932], [1.023, 2.451]])
+            
+            >>> # Get error information for failed predictions
+            >>> prediction.get_metadata('error_type')
+            array([[None, None], ['ValidationError', None]])
+            
+            >>> # Get full metadata for specific prediction
+            >>> prediction.get_metadata(indices=(0, 0))
+            {'start_time': '2024-01-15T10:30:00', 'end_time': '2024-01-15T10:30:02', ...}
+            
+            >>> # Get all metadata for observation 0
+            >>> prediction.get_metadata(indices=0)
+            array([{metadata_dict_1}, {metadata_dict_2}])
+        """
+        if indices is not None:
+            # Handle specific indices request
+            if isinstance(indices, tuple) and len(indices) == 2:
+                i, j = indices
+                item = self[i, j]
+                if item and 'metadata' in item:
+                    metadata = item['metadata']
+                    return metadata.get(key) if key else metadata
+                return None
+            elif isinstance(indices, (int, np.integer)):
+                # Just observation index provided
+                i = indices
+                result = np.array([self.get_metadata(key, (i, j)) for j in range(self.n_raters)])
+                return result
+            else:
+                raise ValueError("indices must be an integer or tuple of (i, j)")
+        
+        # Get metadata for all predictions
+        if key is not None:
+            # Extract specific key across all predictions
+            result = np.empty((self.n_obs, self.n_raters), dtype=object)
+            for i in range(self.n_obs):
+                for j in range(self.n_raters):
+                    item = self[i, j]
+                    if item and 'metadata' in item:
+                        result[i, j] = item['metadata'].get(key)
+                    else:
+                        result[i, j] = None
+            return result
+        else:
+            # Return full metadata dicts
+            result = np.empty((self.n_obs, self.n_raters), dtype=object)
+            for i in range(self.n_obs):
+                for j in range(self.n_raters):
+                    item = self[i, j]
+                    if item and 'metadata' in item:
+                        result[i, j] = item['metadata']
+                    else:
+                        result[i, j] = None
+            return result
+
     def get_tabulations_string(self, response_model: Type[BaseModel], config: Optional['FeedbackConfig'] = None) -> str:
         """
         Generate tabulation strings for categorical fields based on response model types.
