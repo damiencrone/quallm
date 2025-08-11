@@ -5,4 +5,4 @@ from .dataset import Dataset
 from .prompt import Prompt
 from .tasks import *
 from .quallm import *
-from .utils.instructor_mode_tester import InstructorModeTester, ModeTestResult, ModeEvaluationResults
+from .utils.instructor_response_mode_tester import InstructorResponseModeTester, ResponseModeTestResult, ResponseModeEvaluationResults

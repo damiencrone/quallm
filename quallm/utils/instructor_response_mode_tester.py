@@ -105,7 +105,7 @@ class TaskResult(BaseModel):
     errors: List[str]
 
 
-class ModeTestResult(BaseModel):
+class ResponseModeTestResult(BaseModel):
     mode_name: str
     works: bool
     # Metrics tracked per task
@@ -158,13 +158,13 @@ class ModeTestResult(BaseModel):
         return pd.DataFrame(rows)
 
 
-class ModeEvaluationResults:
-    def __init__(self, mode_results: Dict[str, ModeTestResult], model_name: str):
+class ResponseModeEvaluationResults:
+    def __init__(self, mode_results: Dict[str, ResponseModeTestResult], model_name: str):
         """
         Container for complete mode evaluation results.
         
         Args:
-            mode_results: Dictionary mapping mode names to ModeTestResult objects
+            mode_results: Dictionary mapping mode names to ResponseModeTestResult objects
             model_name: Name of the model that was tested
         """
         self.mode_results = mode_results
@@ -206,26 +206,26 @@ class ModeEvaluationResults:
                 'response_time', 'error_type', 'error_message'
             ])
     
-    def get_working_modes(self) -> Dict[str, ModeTestResult]:
+    def get_working_response_modes(self) -> Dict[str, ResponseModeTestResult]:
         """
         Get only the modes that successfully work with this model.
         
         Returns:
-            Dictionary of mode names to ModeTestResult objects for working modes only
+            Dictionary of mode names to ResponseModeTestResult objects for working modes only
         """
         return {name: result for name, result in self.mode_results.items() if result.works}
     
-    def get_recommended_mode(self) -> str:
+    def get_recommended_response_mode(self) -> str:
         """
-        Get the recommended mode name based on performance metrics.
+        Get the recommended response mode name based on performance metrics.
         
-        Sorts modes by validity rate (primary) and response time (secondary).
+        Sorts response modes by validity rate (primary) and response time (secondary).
         Higher validity rate is better; lower response time is better.
         
         Returns:
-            Name of the recommended mode, or None if no modes work
+            Name of the recommended response mode, or None if no response modes work
         """
-        working_modes = self.get_working_modes()
+        working_modes = self.get_working_response_modes()
         if not working_modes:
             return None
             
@@ -247,7 +247,7 @@ class ModeEvaluationResults:
         Returns:
             Formatted summary string showing working modes and detailed recommendations
         """
-        working_modes = self.get_working_modes()
+        working_modes = self.get_working_response_modes()
         lines = [f"Mode Evaluation Results for {self.model_name}"]
         lines.append("=" * 50)
         
@@ -258,7 +258,7 @@ class ModeEvaluationResults:
                                     -working_modes[mode_name].overall_validity,
                                     working_modes[mode_name].overall_avg_response_time
                                 ))
-            recommended = self.get_recommended_mode()
+            recommended = self.get_recommended_response_mode()
             
             # Count total observations and tasks from any working mode
             sample_result = next(iter(working_modes.values()))
@@ -307,7 +307,7 @@ class ModeEvaluationResults:
         return "\n".join(lines)
 
 
-class InstructorModeTester:
+class InstructorResponseModeTester:
     def __init__(self, model: str, base_url: str = "http://localhost:11434/v1", 
                  api_key: str = "ollama", temperature: float = DEFAULT_TEMPERATURE):
         """Initialize tester for a specific model.
@@ -323,16 +323,16 @@ class InstructorModeTester:
         self.api_key = api_key
         self.temperature = temperature
         
-    def find_recommended_mode(self, 
+    def find_recommended_response_mode(self, 
                          include_default_tasks: bool = True,
                          custom_tasks: List[Dict] = None,
                          observations_per_task: int = 20,
                          echo: bool = False,
                          max_workers: int = 1) -> str:
-        """Find recommended Instructor mode for structured outputs.
+        """Find recommended Instructor response mode for structured outputs.
         
-        This method is a convenience wrapper around evaluate_modes() that
-        returns just the recommended mode name.
+        This method is a convenience wrapper around evaluate_response_modes() that
+        returns just the recommended response mode name.
         
         Args:
             include_default_tasks: Whether to run the three built-in diagnostic tasks (default True)
@@ -342,10 +342,10 @@ class InstructorModeTester:
             max_workers: Maximum number of worker threads for parallel processing (default 1)
         
         Returns:
-            Name of the recommended Instructor mode (e.g., "JSON", "MD_JSON")
+            Name of the recommended Instructor response mode (e.g., "JSON", "MD_JSON")
         """
         # Use the class method for the core evaluation logic
-        results = InstructorModeTester.evaluate_modes(
+        results = InstructorResponseModeTester.evaluate_response_modes(
             model=self.model,
             base_url=self.base_url, 
             api_key=self.api_key,
@@ -357,7 +357,7 @@ class InstructorModeTester:
             max_workers=max_workers
         )
         
-        return results.get_recommended_mode()
+        return results.get_recommended_response_mode()
         
     def _create_llm_client(self, mode: instructor.Mode) -> LLMClient:
         """Create an LLMClient with the specified Instructor mode."""
@@ -527,7 +527,7 @@ class InstructorModeTester:
         return task_dataset_pairs
     
     @classmethod
-    def evaluate_modes(cls, 
+    def evaluate_response_modes(cls, 
                        model: str, 
                        base_url: str = "http://localhost:11434/v1",
                        api_key: str = "ollama",
@@ -536,7 +536,7 @@ class InstructorModeTester:
                        custom_tasks: List[Dict] = None,
                        observations_per_task: int = 20,
                        echo: bool = True,
-                       max_workers: int = 1) -> 'ModeEvaluationResults':
+                       max_workers: int = 1) -> 'ResponseModeEvaluationResults':
         """
         Evaluate all Instructor modes for a given model and return detailed results.
         
@@ -555,7 +555,7 @@ class InstructorModeTester:
             max_workers: Maximum number of worker threads for parallel processing (default 1)
             
         Returns:
-            ModeEvaluationResults object containing individual mode results and
+            ResponseModeEvaluationResults object containing individual mode results and
             methods for accessing combined analysis across all modes.
         """
         tester = cls(model, base_url, api_key, temperature)
@@ -583,30 +583,30 @@ class InstructorModeTester:
                 tester._print_mode_result(result)
         
         # Create and return results
-        results = ModeEvaluationResults(mode_results=mode_results, model_name=model)
+        results = ResponseModeEvaluationResults(mode_results=mode_results, model_name=model)
         
         if echo:
             tester._print_evaluation_summary(results)
         
         return results
     
-    def _print_mode_result(self, result: ModeTestResult):
+    def _print_mode_result(self, result: ResponseModeTestResult):
         """Print the results for a single mode test."""
         if result.works:
             print(f"  ✓ Mode works")
         else:
             print(f"  ✗ Mode failed - {', '.join(result.error_types)}")
     
-    def _print_evaluation_summary(self, results: ModeEvaluationResults):
+    def _print_evaluation_summary(self, results: ResponseModeEvaluationResults):
         """Print the summary of all mode evaluations."""
         print("\n" + "=" * 50)
         print("EVALUATION COMPLETE")
         print("=" * 50)
         
-        working_modes = results.get_working_modes()
+        working_modes = results.get_working_response_modes()
         if working_modes:
             print(f"Working modes: {', '.join(working_modes.keys())}")
-            recommended = results.get_recommended_mode()
+            recommended = results.get_recommended_response_mode()
             if recommended:
                 print(f"Recommended mode: {recommended}")
         else:
@@ -616,12 +616,12 @@ class InstructorModeTester:
                   task_dataset_pairs: List[Dict],
                   observations_per_task: int = 20,
                   echo: bool = False,
-                  max_workers: int = 1) -> ModeTestResult:
+                  max_workers: int = 1) -> ResponseModeTestResult:
         """Test a specific Instructor mode with diagnostic tasks."""
         # Create client for this specific mode
         llm_client = self._create_llm_client(mode)
         if llm_client is None:
-            return ModeTestResult(
+            return ResponseModeTestResult(
                 mode_name=mode.name,
                 works=False,
                 overall_validity=0.0,
@@ -639,7 +639,7 @@ class InstructorModeTester:
         
         # Warm-up AND validate in one step using LLMClient.test()
         if not self.warm_up_test(llm_client):
-            return ModeTestResult(
+            return ResponseModeTestResult(
                 mode_name=mode.name,
                 works=False,
                 overall_validity=0.0,
@@ -661,7 +661,7 @@ class InstructorModeTester:
 
     
     def _run_predictor_based_tests(self, llm_client: LLMClient, mode: instructor.Mode,
-                                   task_dataset_pairs: List[Dict], observations_per_task: int, echo: bool = False, max_workers: int = 1) -> ModeTestResult:
+                                   task_dataset_pairs: List[Dict], observations_per_task: int, echo: bool = False, max_workers: int = 1) -> ResponseModeTestResult:
         """
         Run diagnostic tasks using Predictor-based architecture.
         
@@ -678,7 +678,7 @@ class InstructorModeTester:
             max_workers: Maximum number of worker threads for parallel processing
             
         Returns:
-            ModeTestResult with same structure as _run_diagnostic_tests
+            ResponseModeTestResult with same structure as _run_diagnostic_tests
         """
         raw_observations = []
         all_successes = []
@@ -849,7 +849,7 @@ class InstructorModeTester:
                     error_summary.append(f"{error_type} ({count})")
                 print(f"    Error types: {', '.join(error_summary)}")
         
-        return ModeTestResult(
+        return ResponseModeTestResult(
             mode_name=mode.name,
             works=overall_validity > 0,
             overall_validity=overall_validity,

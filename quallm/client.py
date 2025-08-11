@@ -28,7 +28,58 @@ class LLMClient:
                  language_model: str = DEFAULT_LANGUAGE_MODEL,
                  temperature: float = DEFAULT_TEMPERATURE,
                  max_retries: int = DEFAULT_RETRIES,
-                 role_args: dict = {}):
+                 role_args: dict = {},
+                 instructor_mode: str = None,
+                 base_url: str = DEFAULT_BASE_URL,
+                 api_key: str = DEFAULT_API_KEY,
+                 evaluate_response_modes: bool = False):
+        
+        # Validate parameters
+        if evaluate_response_modes and instructor_mode is not None and instructor_mode != "auto":
+            raise ValueError("Cannot specify both evaluate_response_modes=True and instructor_mode (other than 'auto')")
+        
+        if instructor_mode == "auto" and not evaluate_response_modes:
+            raise ValueError("instructor_mode='auto' requires evaluate_response_modes=True")
+        
+        # Handle automatic response mode evaluation
+        if evaluate_response_modes:
+            if client != DEFAULT_CLIENT:
+                raise ValueError("Cannot specify both client and evaluate_response_modes=True")
+            
+            # Import locally to avoid circular dependencies
+            from quallm.utils.instructor_response_mode_tester import InstructorResponseModeTester
+            
+            # Run evaluation to find best response mode
+            try:
+                results = InstructorResponseModeTester.evaluate_response_modes(
+                    model=language_model,
+                    temperature=temperature,
+                    base_url=base_url,
+                    api_key=api_key,
+                    echo=False  # Use default diagnostic tasks only, no console output
+                )
+                recommended_mode_name = results.get_recommended_response_mode()
+                if recommended_mode_name is None:
+                    raise ValueError(f"No working Instructor response modes found for model {language_model}")
+                
+                # Map mode name to Instructor mode
+                mode_map = {
+                    "JSON": instructor.Mode.JSON,
+                    "MD_JSON": instructor.Mode.MD_JSON,
+                    "JSON_SCHEMA": instructor.Mode.JSON_SCHEMA,
+                    "TOOLS": instructor.Mode.TOOLS
+                }
+                recommended_mode = mode_map[recommended_mode_name]
+                
+                # Create client with recommended mode
+                client = instructor.from_openai(
+                    OpenAI(base_url=base_url, api_key=api_key),
+                    mode=recommended_mode
+                )
+            except Exception as e:
+                # Fall back to default client if evaluation fails
+                client = DEFAULT_CLIENT
+        
         self.client = client
         self.language_model = language_model
         self.temperature = temperature
@@ -125,3 +176,85 @@ class LLMClient:
             response_model=TestResponse
         )
         return resp.response
+    
+    def evaluate_available_response_modes(self, **kwargs):
+        """Evaluate which Instructor response modes work with this client's configuration."""
+        from quallm.utils.instructor_response_mode_tester import InstructorResponseModeTester
+        return InstructorResponseModeTester.evaluate_response_modes(
+            model=self.language_model,
+            temperature=self.temperature,
+            base_url=DEFAULT_BASE_URL,  # Use default base_url as it's not stored in client
+            api_key=DEFAULT_API_KEY,    # Use default api_key as it's not stored in client
+            **kwargs
+        )
+    
+    @classmethod
+    def from_response_mode_evaluation(cls,
+                                    model: str,
+                                    temperature: float = DEFAULT_TEMPERATURE,
+                                    base_url: str = DEFAULT_BASE_URL,
+                                    api_key: str = DEFAULT_API_KEY,
+                                    include_default_tasks: bool = True,
+                                    custom_tasks: List = None,
+                                    echo: bool = True,
+                                    max_workers: int = 1,
+                                    **kwargs) -> 'LLMClient':
+        """
+        Create an LLMClient with automatically selected best response mode.
+        
+        This method runs diagnostic tests to find the recommended Instructor response mode
+        for the specified model, then returns a pre-configured LLMClient.
+        
+        Args:
+            model: Model name to optimize for
+            temperature: Temperature value for LLM inference (default DEFAULT_TEMPERATURE)
+            base_url: API endpoint URL
+            api_key: API authentication key
+            include_default_tasks: Whether to run the three built-in diagnostic tasks (default True)
+            custom_tasks: List of dictionaries with 'task' and 'dataset' keys. Each dict contains a Task object paired with its corresponding Dataset object (optional)
+            echo: Whether to show detailed diagnostic output via console logging
+            max_workers: Maximum number of worker threads for parallel processing (default 1)
+            **kwargs: Additional arguments passed to LLMClient.__init__()
+            
+        Returns:
+            LLMClient instance configured with recommended Instructor response mode
+            
+        Raises:
+            ValueError: If no working response modes are found for the model
+        """
+        # Import locally to avoid circular dependencies
+        from quallm.utils.instructor_response_mode_tester import InstructorResponseModeTester
+        
+        # Use the standalone evaluation method for full results
+        evaluation_results = InstructorResponseModeTester.evaluate_response_modes(
+            model=model,
+            temperature=temperature,
+            base_url=base_url,
+            api_key=api_key,
+            include_default_tasks=include_default_tasks,
+            custom_tasks=custom_tasks,
+            echo=echo,
+            max_workers=max_workers
+        )
+        
+        # Select recommended mode from results
+        recommended_mode_name = evaluation_results.get_recommended_response_mode()
+        if recommended_mode_name is None:
+            raise ValueError(f"No working Instructor response modes found for model {model}")
+            
+        mode_map = {
+            "JSON": instructor.Mode.JSON,
+            "MD_JSON": instructor.Mode.MD_JSON,
+            "JSON_SCHEMA": instructor.Mode.JSON_SCHEMA,
+            "TOOLS": instructor.Mode.TOOLS
+        }
+        
+        selected_client = instructor.from_openai(
+            OpenAI(base_url=base_url, api_key=api_key),
+            mode=mode_map[recommended_mode_name]
+        )
+        
+        if echo:
+            print(f"Created LLMClient with recommended response mode: {recommended_mode_name}")
+            
+        return cls(client=selected_client, language_model=model, temperature=temperature, max_retries=kwargs.get('max_retries', DEFAULT_RETRIES), role_args=kwargs.get('role_args', {}))
