@@ -78,6 +78,8 @@ class TaskConfig:
     def infer_output_type(self, output_type):
         if output_type is not None:
             return output_type
+        if self.output_attribute is None:
+            return None
         attr_type = self.response_model.model_fields[self.output_attribute].annotation
         if hasattr(attr_type, '__origin__'):  # For generic types like List, Dict
             return attr_type.__origin__.__name__.lower()
