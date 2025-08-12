@@ -2,7 +2,7 @@ from openai import OpenAI
 from litellm import completion
 import instructor
 from pydantic import BaseModel
-from typing import List
+from typing import List, Union
 
 # Default configuration goes directly through Ollama
 DEFAULT_LANGUAGE_MODEL = "olmo2:13b"
@@ -29,17 +29,23 @@ class LLMClient:
                  temperature: float = DEFAULT_TEMPERATURE,
                  max_retries: int = DEFAULT_RETRIES,
                  role_args: dict = {},
-                 instructor_mode: str = None,
+                 mode: Union[instructor.Mode, str, None] = None,
                  base_url: str = DEFAULT_BASE_URL,
                  api_key: str = DEFAULT_API_KEY,
-                 evaluate_response_modes: bool = False):
+                 evaluate_response_modes: bool = None):
         
-        # Validate parameters
-        if evaluate_response_modes and instructor_mode is not None and instructor_mode != "auto":
-            raise ValueError("Cannot specify both evaluate_response_modes=True and instructor_mode (other than 'auto')")
+        # Handle auto mode logic first
+        if mode == "auto":
+            if evaluate_response_modes is None:
+                # Auto-enable evaluation when mode="auto" and evaluation not explicitly specified
+                evaluate_response_modes = True
+            elif evaluate_response_modes is False:
+                # Only raise error if user explicitly set evaluate_response_modes=False with mode="auto"
+                raise ValueError("mode='auto' cannot be used with evaluate_response_modes=False")
         
-        if instructor_mode == "auto" and not evaluate_response_modes:
-            raise ValueError("instructor_mode='auto' requires evaluate_response_modes=True")
+        # Validate other parameter combinations
+        if evaluate_response_modes and mode is not None and mode != "auto":
+            raise ValueError("Cannot specify both evaluate_response_modes=True and mode (other than 'auto')")
         
         # Handle automatic response mode evaluation
         if evaluate_response_modes:
@@ -50,35 +56,59 @@ class LLMClient:
             from quallm.utils.instructor_response_mode_tester import InstructorResponseModeTester
             
             # Run evaluation to find best response mode
-            try:
-                results = InstructorResponseModeTester.evaluate_response_modes(
-                    model=language_model,
-                    temperature=temperature,
-                    base_url=base_url,
-                    api_key=api_key,
-                    echo=False  # Use default diagnostic tasks only, no console output
-                )
-                recommended_mode_name = results.get_recommended_response_mode()
-                if recommended_mode_name is None:
-                    raise ValueError(f"No working Instructor response modes found for model {language_model}")
-                
-                # Map mode name to Instructor mode
+            results = InstructorResponseModeTester.evaluate_response_modes(
+                model=language_model,
+                temperature=temperature,
+                base_url=base_url,
+                api_key=api_key,
+                echo=False  # Use default diagnostic tasks only, no console output
+            )
+            recommended_mode_name = results.get_recommended_response_mode()
+            if recommended_mode_name is None:
+                raise ValueError(f"No working Instructor response modes found for model {language_model}")
+            
+            # Map mode name to Instructor mode
+            mode_map = {
+                "JSON": instructor.Mode.JSON,
+                "MD_JSON": instructor.Mode.MD_JSON,
+                "JSON_SCHEMA": instructor.Mode.JSON_SCHEMA,
+                "TOOLS": instructor.Mode.TOOLS
+            }
+            recommended_mode = mode_map[recommended_mode_name]
+            
+            # Create client with recommended mode
+            client = instructor.from_openai(
+                OpenAI(base_url=base_url, api_key=api_key),
+                mode=recommended_mode
+            )
+        
+        # Handle mode parameter (mixed-type approach)
+        elif mode is not None:
+            if isinstance(mode, str):
+                # Convert string mode to instructor.Mode enum
                 mode_map = {
                     "JSON": instructor.Mode.JSON,
                     "MD_JSON": instructor.Mode.MD_JSON,
                     "JSON_SCHEMA": instructor.Mode.JSON_SCHEMA,
                     "TOOLS": instructor.Mode.TOOLS
                 }
-                recommended_mode = mode_map[recommended_mode_name]
-                
-                # Create client with recommended mode
-                client = instructor.from_openai(
-                    OpenAI(base_url=base_url, api_key=api_key),
-                    mode=recommended_mode
-                )
-            except Exception as e:
-                # Fall back to default client if evaluation fails
-                client = DEFAULT_CLIENT
+                if mode not in mode_map:
+                    raise ValueError(f"Invalid mode string: {mode}. Valid options: {list(mode_map.keys())} or 'auto'")
+                instructor_mode = mode_map[mode]
+                if client == DEFAULT_CLIENT:
+                    client = instructor.from_openai(
+                        OpenAI(base_url=base_url, api_key=api_key),
+                        mode=instructor_mode
+                    )
+            elif isinstance(mode, instructor.Mode):
+                # Direct instructor.Mode enum usage
+                if client == DEFAULT_CLIENT:
+                    client = instructor.from_openai(
+                        OpenAI(base_url=base_url, api_key=api_key),
+                        mode=mode
+                    )
+            else:
+                raise TypeError(f"mode must be str, instructor.Mode, or None. Got {type(mode)}")
         
         self.client = client
         self.language_model = language_model

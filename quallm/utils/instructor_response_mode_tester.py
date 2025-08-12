@@ -2,6 +2,8 @@ from typing import Dict, List, Optional, Any
 import pandas as pd
 import time
 import statistics
+import json
+import os
 from pydantic import BaseModel
 import instructor
 from ..client import LLMClient, DEFAULT_TEMPERATURE
@@ -10,6 +12,27 @@ from ..dataset import Dataset
 from ..predictor import Predictor
 from openai import OpenAI
 from enum import Enum
+
+
+def load_diagnostic_data(filename: str) -> Dict[str, Any]:
+    """
+    Load diagnostic test data from JSON file.
+    
+    Args:
+        filename: Name of the JSON file (without path) in the diagnostics data directory
+        
+    Returns:
+        Dictionary containing the loaded data with 'data_args' and 'data' keys
+        
+    Raises:
+        FileNotFoundError: If the diagnostic data file doesn't exist
+        json.JSONDecodeError: If the file contains invalid JSON
+    """
+    from importlib.resources import files
+    
+    # Load from package resources (works in both dev and installed mode)
+    data_text = files('quallm.data.diagnostics').joinpath(filename).read_text()
+    return json.loads(data_text)
 
 
 # Default diagnostic task response models
@@ -396,31 +419,17 @@ class InstructorResponseModeTester:
         Returns:
             List of three Dataset objects with test data for the default diagnostic tasks
         """
-        # Basic Q&A dataset
-        qa_data = [
-            {"question": "What is the main theme of this content?"},
-            {"question": "How would you summarize this information?"},
-            {"question": "What are the key points discussed?"}
-        ]
-        qa_dataset = Dataset(qa_data, data_args=["question"])
+        datasets = []
         
-        # Classification dataset
-        classification_data = [
-            {"text": "This is sample text for analysis."},
-            {"text": "Another piece of text to classify."},
-            {"text": "A third example for classification testing."}
-        ]
-        classification_dataset = Dataset(classification_data, data_args=["text"])
+        # Load data from JSON files
+        data_files = ['basic_qa.json', 'classification.json', 'nested_analysis.json']
         
-        # Nested analysis dataset
-        nested_data = [
-            {"content": "Sample content for deep analysis."},
-            {"content": "Complex content requiring detailed examination."},
-            {"content": "Rich textual material for comprehensive analysis."}
-        ]
-        nested_dataset = Dataset(nested_data, data_args=["content"])
-        
-        return [qa_dataset, classification_dataset, nested_dataset]
+        for filename in data_files:
+            data_config = load_diagnostic_data(filename)
+            dataset = Dataset(data_config['data'], data_args=data_config['data_args'])
+            datasets.append(dataset)
+            
+        return datasets
         
     def _generate_recommendations(self, validity: float, mode: instructor.Mode, avg_time: float = 0.0, 
                                 time_min: float = 0.0, time_max: float = 0.0, error_types: List[str] = None) -> List[str]:

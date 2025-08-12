@@ -13,6 +13,10 @@ setup(
     long_description_content_type="text/markdown",
     url='https://github.com/damiencrone/quallm',
     packages=find_packages(),
+    package_data={
+        'quallm': ['data/diagnostics/*.json'],
+    },
+    include_package_data=True,
     install_requires=[
         'pydantic',
         'openai',
@@ -32,5 +36,5 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.10',
     ],
-    python_requires='>=3.10',
+    python_requires='>=3.9',
 )

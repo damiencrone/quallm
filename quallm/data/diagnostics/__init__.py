@@ -1,0 +1,1 @@
+"""Diagnostic test data for QualLM response mode testing."""

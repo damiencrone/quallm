@@ -1,0 +1,307 @@
+{
+  "data_args": [
+    "question"
+  ],
+  "data": [
+    {
+      "question": "What is the main theme of this content?"
+    },
+    {
+      "question": "How does this relate to previous examples?"
+    },
+    {
+      "question": "What are the key takeaways from this analysis?"
+    },
+    {
+      "question": "Can you identify any patterns in the data?"
+    },
+    {
+      "question": "What conclusions can be drawn from this information?"
+    },
+    {
+      "question": "How would you summarize this in one sentence?"
+    },
+    {
+      "question": "What evidence supports this claim?"
+    },
+    {
+      "question": "Are there any contradictions in this text?"
+    },
+    {
+      "question": "What is the author's primary argument?"
+    },
+    {
+      "question": "How does this compare to industry standards?"
+    },
+    {
+      "question": "What methodology was used in this study?"
+    },
+    {
+      "question": "Can you explain the significance of these findings?"
+    },
+    {
+      "question": "What are the potential implications of this research?"
+    },
+    {
+      "question": "How reliable is this source of information?"
+    },
+    {
+      "question": "What questions remain unanswered?"
+    },
+    {
+      "question": "Can you identify the target audience for this content?"
+    },
+    {
+      "question": "What is the historical context of this topic?"
+    },
+    {
+      "question": "How does this challenge existing assumptions?"
+    },
+    {
+      "question": "What are the strengths and weaknesses of this approach?"
+    },
+    {
+      "question": "Can you provide a critical analysis of this argument?"
+    },
+    {
+      "question": "What alternative explanations could there be?"
+    },
+    {
+      "question": "How does this relate to current events?"
+    },
+    {
+      "question": "What are the ethical considerations involved?"
+    },
+    {
+      "question": "Can you identify any biases in this presentation?"
+    },
+    {
+      "question": "What would be the next logical step in this research?"
+    },
+    {
+      "question": "How does this impact different stakeholder groups?"
+    },
+    {
+      "question": "What are the practical applications of this theory?"
+    },
+    {
+      "question": "Can you explain this concept in simpler terms?"
+    },
+    {
+      "question": "What assumptions are being made here?"
+    },
+    {
+      "question": "How does this fit into the broader picture?"
+    },
+    {
+      "question": "What are the key metrics or measurements used?"
+    },
+    {
+      "question": "Can you identify the cause and effect relationships?"
+    },
+    {
+      "question": "What is the scope and scale of this issue?"
+    },
+    {
+      "question": "How has this evolved over time?"
+    },
+    {
+      "question": "What are the main challenges or obstacles?"
+    },
+    {
+      "question": "Can you provide specific examples or case studies?"
+    },
+    {
+      "question": "What is the economic impact of this decision?"
+    },
+    {
+      "question": "How does this affect environmental sustainability?"
+    },
+    {
+      "question": "What are the social implications of this policy?"
+    },
+    {
+      "question": "Can you explain the technical details involved?"
+    },
+    {
+      "question": "What is the timeline for implementation?"
+    },
+    {
+      "question": "How does this compare to alternative solutions?"
+    },
+    {
+      "question": "What resources are required for this project?"
+    },
+    {
+      "question": "Can you identify potential risks or pitfalls?"
+    },
+    {
+      "question": "What is the expected return on investment?"
+    },
+    {
+      "question": "How will success be measured or evaluated?"
+    },
+    {
+      "question": "What are the legal or regulatory considerations?"
+    },
+    {
+      "question": "Can you describe the decision-making process?"
+    },
+    {
+      "question": "What role does technology play in this scenario?"
+    },
+    {
+      "question": "How does culture influence this phenomenon?"
+    },
+    {
+      "question": "What are the geographic factors at play?"
+    },
+    {
+      "question": "Can you explain the psychological aspects?"
+    },
+    {
+      "question": "What is the political context of this issue?"
+    },
+    {
+      "question": "How does this relate to demographic trends?"
+    },
+    {
+      "question": "What are the educational implications?"
+    },
+    {
+      "question": "Can you identify the key stakeholders involved?"
+    },
+    {
+      "question": "What is the competitive landscape like?"
+    },
+    {
+      "question": "How does this align with organizational goals?"
+    },
+    {
+      "question": "What are the communication strategies employed?"
+    },
+    {
+      "question": "Can you assess the quality of the evidence?"
+    },
+    {
+      "question": "What are the underlying principles or theories?"
+    },
+    {
+      "question": "How does this impact public health?"
+    },
+    {
+      "question": "What role does innovation play here?"
+    },
+    {
+      "question": "Can you explain the financial implications?"
+    },
+    {
+      "question": "What are the security concerns related to this?"
+    },
+    {
+      "question": "How does this affect international relations?"
+    },
+    {
+      "question": "What is the role of government in this context?"
+    },
+    {
+      "question": "Can you identify emerging trends or patterns?"
+    },
+    {
+      "question": "What are the long-term consequences?"
+    },
+    {
+      "question": "How does this relate to sustainability goals?"
+    },
+    {
+      "question": "What are the key performance indicators?"
+    },
+    {
+      "question": "Can you explain the supply chain impacts?"
+    },
+    {
+      "question": "What is the role of data in this analysis?"
+    },
+    {
+      "question": "How does this affect consumer behavior?"
+    },
+    {
+      "question": "What are the infrastructure requirements?"
+    },
+    {
+      "question": "Can you identify best practices in this field?"
+    },
+    {
+      "question": "What is the impact on employment or jobs?"
+    },
+    {
+      "question": "How does this relate to climate change?"
+    },
+    {
+      "question": "What are the privacy implications?"
+    },
+    {
+      "question": "Can you explain the regulatory framework?"
+    },
+    {
+      "question": "What role does collaboration play?"
+    },
+    {
+      "question": "How does this impact rural communities?"
+    },
+    {
+      "question": "What are the urban planning considerations?"
+    },
+    {
+      "question": "Can you assess the scalability of this solution?"
+    },
+    {
+      "question": "What is the role of artificial intelligence?"
+    },
+    {
+      "question": "How does this affect mental health?"
+    },
+    {
+      "question": "What are the cultural sensitivities involved?"
+    },
+    {
+      "question": "Can you explain the economic models used?"
+    },
+    {
+      "question": "What is the impact on biodiversity?"
+    },
+    {
+      "question": "How does this relate to human rights?"
+    },
+    {
+      "question": "What are the transportation implications?"
+    },
+    {
+      "question": "Can you identify knowledge gaps in this area?"
+    },
+    {
+      "question": "What is the role of public opinion?"
+    },
+    {
+      "question": "How does this affect energy consumption?"
+    },
+    {
+      "question": "What are the implications for education policy?"
+    },
+    {
+      "question": "Can you explain the statistical significance?"
+    },
+    {
+      "question": "What is the impact on local economies?"
+    },
+    {
+      "question": "How does this relate to digital transformation?"
+    },
+    {
+      "question": "What are the workforce development needs?"
+    },
+    {
+      "question": "Can you assess the feasibility of this proposal?"
+    }
+  ]
+}
