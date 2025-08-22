@@ -300,7 +300,8 @@ def test_find_recommended_response_mode_calls_evaluate_response_modes():
             custom_tasks=None,
             observations_per_task=20,
             echo=False,
-            max_workers=1
+            max_workers=1,
+            timeout=30.0
         )
 
 

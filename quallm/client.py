@@ -10,19 +10,34 @@ DEFAULT_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_API_KEY = "ollama"  # Ollama doesn't actually need an API key.
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_RETRIES = 5
+DEFAULT_TIMEOUT = 600.0
 
 # Create the default client that goes directly through Ollama.
 DEFAULT_CLIENT = instructor.from_openai(
     OpenAI(
         base_url=DEFAULT_BASE_URL,
         api_key=DEFAULT_API_KEY,
+        timeout=DEFAULT_TIMEOUT,
     ),
     mode=instructor.Mode.JSON,
 )
 
 
 class LLMClient:
-    """Class containing an Instructor LLM client and request parameters."""
+    """Class containing an Instructor LLM client and request parameters.
+    
+    Args:
+        client: Instructor client instance to use
+        language_model: Model name to use for requests
+        temperature: Temperature value for LLM inference  
+        max_retries: Maximum number of retries for failed requests
+        role_args: Role-specific arguments for prompts
+        mode: Instructor response mode to use
+        base_url: API endpoint URL
+        api_key: API authentication key
+        evaluate_response_modes: Whether to run response mode evaluation
+        timeout: Request timeout in seconds (default 600.0)
+    """
     def __init__(self,
                  client: instructor.client.Instructor = DEFAULT_CLIENT,
                  language_model: str = DEFAULT_LANGUAGE_MODEL,
@@ -32,7 +47,30 @@ class LLMClient:
                  mode: Union[instructor.Mode, str, None] = None,
                  base_url: str = DEFAULT_BASE_URL,
                  api_key: str = DEFAULT_API_KEY,
-                 evaluate_response_modes: bool = None):
+                 evaluate_response_modes: bool = None,
+                 timeout: float = DEFAULT_TIMEOUT):
+        """
+        Initialize an LLMClient instance.
+        
+        Args:
+            client: Instructor client instance
+            language_model: Model name to use
+            temperature: Temperature for generation
+            max_retries: Maximum number of retries
+            role_args: Role-specific arguments
+            mode: Instructor mode (JSON, MD_JSON, etc.) or 'auto'
+            base_url: API base URL
+            api_key: API key
+            evaluate_response_modes: Whether to evaluate response modes
+            timeout: Request timeout in seconds (default 600.0)
+        """
+        
+        # If using DEFAULT_CLIENT but timeout differs from default, create new client
+        if client == DEFAULT_CLIENT and timeout != DEFAULT_TIMEOUT:
+            client = instructor.from_openai(
+                OpenAI(base_url=base_url, api_key=api_key, timeout=timeout),
+                mode=instructor.Mode.JSON
+            )
         
         # Handle auto mode logic first
         if mode == "auto":
@@ -61,7 +99,8 @@ class LLMClient:
                 temperature=temperature,
                 base_url=base_url,
                 api_key=api_key,
-                echo=False  # Use default diagnostic tasks only, no console output
+                echo=False,  # Use default diagnostic tasks only, no console output
+                timeout=timeout
             )
             recommended_mode_name = results.get_recommended_response_mode()
             if recommended_mode_name is None:
@@ -78,7 +117,7 @@ class LLMClient:
             
             # Create client with recommended mode
             client = instructor.from_openai(
-                OpenAI(base_url=base_url, api_key=api_key),
+                OpenAI(base_url=base_url, api_key=api_key, timeout=timeout),
                 mode=recommended_mode
             )
         
@@ -97,14 +136,14 @@ class LLMClient:
                 instructor_mode = mode_map[mode]
                 if client == DEFAULT_CLIENT:
                     client = instructor.from_openai(
-                        OpenAI(base_url=base_url, api_key=api_key),
+                        OpenAI(base_url=base_url, api_key=api_key, timeout=timeout),
                         mode=instructor_mode
                     )
             elif isinstance(mode, instructor.Mode):
                 # Direct instructor.Mode enum usage
                 if client == DEFAULT_CLIENT:
                     client = instructor.from_openai(
-                        OpenAI(base_url=base_url, api_key=api_key),
+                        OpenAI(base_url=base_url, api_key=api_key, timeout=timeout),
                         mode=mode
                     )
             else:
@@ -115,6 +154,7 @@ class LLMClient:
         self.temperature = temperature
         self.max_retries = max_retries
         self.role_args = role_args
+        self.timeout = timeout
 
     def request(self, system_prompt, user_prompt, response_model):
         """Request a response from LLM given a prompt."""
@@ -122,13 +162,21 @@ class LLMClient:
             {'role': 'system', 'content': system_prompt},
             {'role': 'user', 'content': user_prompt}
         ]
-        resp = self.client.chat.completions.create(
-            model=self.language_model,
-            messages=messages,
-            response_model=response_model,
-            temperature=self.temperature,
-            max_retries=self.max_retries
-        )
+        
+        # Build parameters dict
+        create_params = {
+            'model': self.language_model,
+            'messages': messages,
+            'response_model': response_model,
+            'temperature': self.temperature,
+            'max_retries': self.max_retries
+        }
+        
+        # LiteLLM requires per-request timeout
+        if self.backend == 'litellm':
+            create_params['timeout'] = self.timeout
+        
+        resp = self.client.chat.completions.create(**create_params)
         return resp
 
     @classmethod
@@ -136,16 +184,26 @@ class LLMClient:
                      language_model: str = "ollama/olmo2:13b",
                      temperature: float = DEFAULT_TEMPERATURE,
                      max_retries: int = DEFAULT_RETRIES,
-                     role_args: dict = {}):
+                     role_args: dict = {},
+                     timeout: float = DEFAULT_TIMEOUT):
         """Create an LLMClient instance using a client that routes via litellm.
         This is an alternative constructor for users who want to use the litellm
-        backend."""
+        backend.
+        
+        Args:
+            language_model: Model name to use
+            temperature: Temperature for generation
+            max_retries: Maximum number of retries
+            role_args: Role-specific arguments
+            timeout: Request timeout in seconds (default 600.0)
+        """
         client = instructor.from_litellm(completion)
         return cls(client=client,
                    language_model=language_model,
                    temperature=temperature,
                    max_retries=max_retries,
-                   role_args=role_args)
+                   role_args=role_args,
+                   timeout=timeout)
     
     def set_role_args(self, role_args: dict):
         """Set the role arguments for the LLM client"""
@@ -161,14 +219,34 @@ class LLMClient:
         return rater_list
     
     def copy(self):
+        """
+        Create a copy of this LLMClient instance.
+        
+        Returns:
+            LLMClient: A new instance with the same configuration.
+        """
         return LLMClient(
             client=self.client,
             language_model=self.language_model,
             temperature=self.temperature,
             max_retries=self.max_retries,
-            role_args=self.role_args
+            role_args=self.role_args,
+            timeout=self.timeout
         )
     
+    @property
+    def backend(self) -> str:
+        """Detect the backend provider for this client.
+        
+        Returns:
+            str: Backend name ('litellm', 'openai', or 'unknown')
+        """
+        if hasattr(self.client, 'create_fn'):
+            fn_module = getattr(self.client.create_fn, '__module__', '')
+            if fn_module and '.' in fn_module:
+                return fn_module.split('.')[0]
+        return 'unknown'
+
     @property
     def mode(self) -> str:
         """
@@ -215,6 +293,7 @@ class LLMClient:
             temperature=self.temperature,
             base_url=DEFAULT_BASE_URL,  # Use default base_url as it's not stored in client
             api_key=DEFAULT_API_KEY,    # Use default api_key as it's not stored in client
+            timeout=kwargs.pop('timeout', self.timeout),  # Use client timeout as default
             **kwargs
         )
     
@@ -228,6 +307,7 @@ class LLMClient:
                                     custom_tasks: List = None,
                                     echo: bool = True,
                                     max_workers: int = 1,
+                                    timeout: float = 30.0,
                                     **kwargs) -> 'LLMClient':
         """
         Create an LLMClient with automatically selected best response mode.
@@ -244,6 +324,7 @@ class LLMClient:
             custom_tasks: List of dictionaries with 'task' and 'dataset' keys. Each dict contains a Task object paired with its corresponding Dataset object (optional)
             echo: Whether to show detailed diagnostic output via console logging
             max_workers: Maximum number of worker threads for parallel processing (default 1)
+            timeout: Request timeout in seconds (default 30.0)
             **kwargs: Additional arguments passed to LLMClient.__init__()
             
         Returns:
@@ -264,7 +345,8 @@ class LLMClient:
             include_default_tasks=include_default_tasks,
             custom_tasks=custom_tasks,
             echo=echo,
-            max_workers=max_workers
+            max_workers=max_workers,
+            timeout=timeout
         )
         
         # Select recommended mode from results
@@ -280,11 +362,11 @@ class LLMClient:
         }
         
         selected_client = instructor.from_openai(
-            OpenAI(base_url=base_url, api_key=api_key),
+            OpenAI(base_url=base_url, api_key=api_key, timeout=timeout),
             mode=mode_map[recommended_mode_name]
         )
         
         if echo:
             print(f"Created LLMClient with recommended response mode: {recommended_mode_name}")
             
-        return cls(client=selected_client, language_model=model, temperature=temperature, max_retries=kwargs.get('max_retries', DEFAULT_RETRIES), role_args=kwargs.get('role_args', {}))
+        return cls(client=selected_client, language_model=model, temperature=temperature, max_retries=kwargs.get('max_retries', DEFAULT_RETRIES), role_args=kwargs.get('role_args', {}), timeout=timeout)

@@ -332,7 +332,8 @@ class ResponseModeEvaluationResults:
 
 class InstructorResponseModeTester:
     def __init__(self, model: str, base_url: str = "http://localhost:11434/v1", 
-                 api_key: str = "ollama", temperature: float = DEFAULT_TEMPERATURE):
+                 api_key: str = "ollama", temperature: float = DEFAULT_TEMPERATURE,
+                 timeout: float = 30.0):
         """Initialize tester for a specific model.
         
         Args:
@@ -340,18 +341,21 @@ class InstructorResponseModeTester:
             base_url: API endpoint (Ollama default shown)
             api_key: API key for authentication ("ollama" for local)
             temperature: Temperature parameter for LLM inference (default DEFAULT_TEMPERATURE)
+            timeout: Request timeout in seconds (default 30.0)
         """
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
         self.temperature = temperature
+        self.timeout = timeout
         
     def find_recommended_response_mode(self, 
                          include_default_tasks: bool = True,
                          custom_tasks: List[Dict] = None,
                          observations_per_task: int = 20,
                          echo: bool = False,
-                         max_workers: int = 1) -> str:
+                         max_workers: int = 1,
+                         timeout: float = 30.0) -> str:
         """Find recommended Instructor response mode for structured outputs.
         
         This method is a convenience wrapper around evaluate_response_modes() that
@@ -363,6 +367,7 @@ class InstructorResponseModeTester:
             observations_per_task: Number of test runs per task (default 20).
             echo: Whether to show detailed diagnostic output via console logging
             max_workers: Maximum number of worker threads for parallel processing (default 1)
+            timeout: Request timeout in seconds (default 30.0)
         
         Returns:
             Name of the recommended Instructor response mode (e.g., "JSON", "MD_JSON")
@@ -377,7 +382,8 @@ class InstructorResponseModeTester:
             custom_tasks=custom_tasks,
             observations_per_task=observations_per_task,
             echo=echo,
-            max_workers=max_workers
+            max_workers=max_workers,
+            timeout=timeout
         )
         
         return results.get_recommended_response_mode()
@@ -386,13 +392,14 @@ class InstructorResponseModeTester:
         """Create an LLMClient with the specified Instructor mode."""
         try:
             client = instructor.from_openai(
-                OpenAI(base_url=self.base_url, api_key=self.api_key),
+                OpenAI(base_url=self.base_url, api_key=self.api_key, timeout=self.timeout),
                 mode=mode
             )
             return LLMClient(
                 client=client,
                 language_model=self.model,
-                temperature=self.temperature
+                temperature=self.temperature,
+                timeout=self.timeout
             )
         except Exception:
             return None
@@ -545,7 +552,8 @@ class InstructorResponseModeTester:
                        custom_tasks: List[Dict] = None,
                        observations_per_task: int = 20,
                        echo: bool = True,
-                       max_workers: int = 1) -> 'ResponseModeEvaluationResults':
+                       max_workers: int = 1,
+                       timeout: float = 30.0) -> 'ResponseModeEvaluationResults':
         """
         Evaluate all Instructor modes for a given model and return detailed results.
         
@@ -562,12 +570,13 @@ class InstructorResponseModeTester:
             observations_per_task: Number of test runs per task (default 20).
             echo: Whether to show detailed diagnostic output via console logging
             max_workers: Maximum number of worker threads for parallel processing (default 1)
+            timeout: Request timeout in seconds (default 30.0)
             
         Returns:
             ResponseModeEvaluationResults object containing individual mode results and
             methods for accessing combined analysis across all modes.
         """
-        tester = cls(model, base_url, api_key, temperature)
+        tester = cls(model, base_url, api_key, temperature, timeout)
         
         # Build task-dataset pairs
         task_dataset_pairs = tester._build_task_dataset_pairs(include_default_tasks, custom_tasks)
