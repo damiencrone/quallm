@@ -19,7 +19,7 @@ DEFAULT_CLIENT = instructor.from_openai(
         api_key=DEFAULT_API_KEY,
         timeout=DEFAULT_TIMEOUT,
     ),
-    mode=instructor.Mode.JSON,
+    mode=instructor.Mode.JSON_SCHEMA,
 )
 
 
@@ -69,7 +69,7 @@ class LLMClient:
         if client == DEFAULT_CLIENT and timeout != DEFAULT_TIMEOUT:
             client = instructor.from_openai(
                 OpenAI(base_url=base_url, api_key=api_key, timeout=timeout),
-                mode=instructor.Mode.JSON
+                mode=instructor.Mode.JSON_SCHEMA
             )
         
         # Handle auto mode logic first
