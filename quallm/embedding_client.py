@@ -189,23 +189,18 @@ class EmbeddingClient:
                            random_state: int = 1234,
                            n_jobs: int = 1) -> np.ndarray:
         """Helper method to reduce dimensionality of embeddings using UMAP."""
+        from quallm.utils.clustering_utils import reduce_dimensions
+        
         self._validate_array(embeddings_array)
-        
-        # Adjust n_neighbors based on dataset size
-        # Use minimum of provided n_neighbors and half the number of observations
-        n_samples = embeddings_array.shape[0]
-        adjusted_n_neighbors = min(n_neighbors, n_samples // 2)
-        
-        umap_reducer = umap.UMAP(
+        return reduce_dimensions(
+            embeddings_array,
             n_components=n_components,
-            n_neighbors=adjusted_n_neighbors,
+            n_neighbors=n_neighbors,
             min_dist=min_dist,
             metric=metric,
             random_state=random_state,
             n_jobs=n_jobs
         )
-        umap_embeddings = umap_reducer.fit_transform(embeddings_array)
-        return umap_embeddings
 
     def _cluster_embeddings(self,
                             embeddings_to_cluster: np.ndarray, # UMAP-reduced embeddings
@@ -218,18 +213,19 @@ class EmbeddingClient:
                             cluster_selection_method: str = 'eom' # HDBSCAN parameter ('eom' or 'leaf')
                            ) -> np.ndarray:
         """Helper method to cluster embeddings using HDBSCAN."""
+        from quallm.utils.clustering_utils import cluster_embeddings
+        
         self._validate_array(embeddings_to_cluster)
-        clusterer = hdbscan.HDBSCAN(
+        return cluster_embeddings(
+            embeddings_to_cluster,
             min_cluster_size=min_cluster_size,
-            min_samples=min_samples, # Pass None to let HDBSCAN use its default (min_cluster_size)
+            min_samples=min_samples,
             metric=cluster_metric,
             alpha=alpha,
             cluster_selection_epsilon=cluster_selection_epsilon,
             allow_single_cluster=allow_single_cluster,
             cluster_selection_method=cluster_selection_method
         )
-        cluster_labels = clusterer.fit_predict(embeddings_to_cluster)
-        return cluster_labels
                 
     def sort_embeddings(self, embeddings: Union[List[List[float]], np.ndarray]) -> pd.DataFrame:
         """Sorts embeddings using UMAP and HDBSCAN."""
