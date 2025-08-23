@@ -431,12 +431,20 @@ Use your judgment to decide if the feedback is useful or not.""" + linebreak + l
                     processed_indices=None  # No processing done, will sample from all data
                 )
         
-        # Build conditional system prompt
-        system_prompt = TASK_DEFINITION_FEEDBACK_CONFIG.prompt.system_template
+        # Build conditional system prompt with proper insertion
+        conditional_instructions = ""
         if example_data is not None:
-            system_prompt += "\n\n" + DATA_ANALYSIS_INSTRUCTIONS
+            conditional_instructions += DATA_ANALYSIS_INSTRUCTIONS
         if task_raters is not None:
-            system_prompt += "\n\n" + EXECUTION_ANALYSIS_INSTRUCTIONS
+            if conditional_instructions:
+                conditional_instructions += "\n\n"
+            conditional_instructions += EXECUTION_ANALYSIS_INSTRUCTIONS
+        
+        # Replace placeholder with conditional instructions (or remove if none)
+        system_prompt = TASK_DEFINITION_FEEDBACK_CONFIG.prompt.system_template.replace(
+            "<<<CONDITIONAL_INSTRUCTIONS_PLACEHOLDER>>>",
+            "\n" + conditional_instructions if conditional_instructions else ""
+        )
         
         # Create enhanced feedback task configuration
         enhanced_feedback_config = TaskConfig(
