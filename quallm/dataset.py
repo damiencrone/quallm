@@ -274,7 +274,7 @@ class Dataset(List[Dict[str, str]]):
     def from_cluster_samples(cls,
                             data: pd.DataFrame,
                             n_per_combination: int = 3,
-                            sample_size: int = 5,
+                            sample_size: int = 10,
                             min_cluster_size: int = 15,
                             embedding_client: Optional['EmbeddingClient'] = None,
                             random_state: Optional[int] = None,
@@ -296,6 +296,17 @@ class Dataset(List[Dict[str, str]]):
            - Mixed: One cluster combined with random observations
            - Random: Pure random selection as baseline
         
+        Note: Outlier observations (cluster -1 from HDBSCAN) are treated as a valid cluster
+              if they meet the min_cluster_size threshold.
+        
+        Example: With default n_per_combination=3 and 2 valid clusters (including outliers if
+                 they meet the threshold), you'll get:
+                 - 6 individual cluster samples (3 per cluster)
+                 - 3 cluster pair samples (3 for the single pair)
+                 - 6 mixed samples (3 per cluster mixed with random)
+                 - 3 random samples
+                 Total: 18 samples
+        
         This systematic sampling is useful when you need to understand what differentiates
         groups in your data, as viewing similar items together makes their shared features
         apparent, while contrasting different groups highlights their distinctions.
@@ -303,9 +314,13 @@ class Dataset(List[Dict[str, str]]):
         Args:
             data: DataFrame to sample from (must contain text data)
             n_per_combination: Number of samples per combination type (default=3)
-            sample_size: Observations per sample (default=5)
+            sample_size: Total observations per sample (default=10)
+                - Individual cluster samples: all from one cluster
+                - Cluster pair samples: split between two clusters (roughly sample_size/2 each)
+                - Mixed samples: split between cluster and random (roughly sample_size/2 each)
+                - Random samples: all random
             min_cluster_size: Minimum observations to form a cluster (default=15)
-                             Must be >= 3 * sample_size to ensure variety without replacement
+                             Must be >= sample_size to ensure sampling without replacement
             embedding_client: Optional embedding client (auto-created if None)
             random_state: Random seed for reproducibility
             labels: Optional column name mapping for display
@@ -317,15 +332,15 @@ class Dataset(List[Dict[str, str]]):
             
         Raises:
             ValueError: If sample_size <= 0, n_per_combination <= 0, or 
-                       min_cluster_size < 3 * sample_size
+                       min_cluster_size < sample_size
         """
         # Parameter validation
         if sample_size <= 0:
             raise ValueError("sample_size must be positive")
         if n_per_combination <= 0:
             raise ValueError("n_per_combination must be positive")
-        if min_cluster_size < 3 * sample_size:
-            raise ValueError(f"min_cluster_size must be >= 3 * sample_size to ensure variety. Got min_cluster_size={min_cluster_size}, sample_size={sample_size}, but need at least {3 * sample_size}")
+        if min_cluster_size < sample_size:
+            raise ValueError(f"min_cluster_size must be >= sample_size to ensure sampling without replacement. Got min_cluster_size={min_cluster_size}, sample_size={sample_size}")
         from quallm.utils.clustering_utils import get_cluster_assignments
         from quallm.embedding_client import EmbeddingClient
         
@@ -389,8 +404,7 @@ class Dataset(List[Dict[str, str]]):
         - Cluster-random combinations: One cluster mixed with random observations
         - Pure random samples: Random observations as baseline comparison
         
-        Each combination type gets n_per_combination samples. When a cluster has fewer
-        observations than sample_size, sampling with replacement is used.
+        Each combination type gets n_per_combination samples.
         """
         import itertools
         
@@ -401,9 +415,10 @@ class Dataset(List[Dict[str, str]]):
         for cluster_id in valid_clusters:
             for _ in range(n_per_combination):
                 cluster_data = clustered_data[clustered_data['_cluster'] == cluster_id]
-                # Handle clusters smaller than sample_size with replacement
-                replace_needed = len(cluster_data) < sample_size
-                sample_data = cluster_data.sample(n=sample_size, replace=replace_needed, random_state=rng.randint(10000))
+                # Verify cluster has enough observations
+                if len(cluster_data) < sample_size:
+                    raise ValueError(f"Cluster {cluster_id} has {len(cluster_data)} observations but {sample_size} are required for sampling without replacement")
+                sample_data = cluster_data.sample(n=sample_size, replace=False, random_state=rng.randint(10000))
                 # Randomize order of observations within sample
                 sample_data = sample_data.sample(frac=1.0, random_state=rng.randint(10000))
                 sample_string = _create_cluster_sample_string(
@@ -420,11 +435,13 @@ class Dataset(List[Dict[str, str]]):
                     cluster_data = clustered_data[clustered_data['_cluster'] == cluster_id]
                     # Sample half the sample_size from each cluster (with balancing)
                     cluster_sample_size = sample_size // 2
-                    if cluster_id == pair[1] and sample_size % 2 == 1:  # Give remainder to second cluster
+                    # Randomly assign the extra observation when sample_size is odd
+                    if sample_size % 2 == 1 and cluster_id == pair[rng.randint(2)]:
                         cluster_sample_size += 1
                     
-                    replace_needed = len(cluster_data) < cluster_sample_size
-                    cluster_sample = cluster_data.sample(n=cluster_sample_size, replace=replace_needed, random_state=rng.randint(10000))
+                    if len(cluster_data) < cluster_sample_size:
+                        raise ValueError(f"Cluster {cluster_id} has {len(cluster_data)} observations but {cluster_sample_size} are required for sampling without replacement")
+                    cluster_sample = cluster_data.sample(n=cluster_sample_size, replace=False, random_state=rng.randint(10000))
                     combined_data.append(cluster_sample)
                 
                 # Combine and randomize order
@@ -442,8 +459,9 @@ class Dataset(List[Dict[str, str]]):
                 cluster_data = clustered_data[clustered_data['_cluster'] == cluster_id]
                 cluster_sample_size = sample_size // 2
                 
-                replace_needed = len(cluster_data) < cluster_sample_size
-                cluster_sample = cluster_data.sample(n=cluster_sample_size, replace=replace_needed, random_state=rng.randint(10000))
+                if len(cluster_data) < cluster_sample_size:
+                    raise ValueError(f"Cluster {cluster_id} has {len(cluster_data)} observations but {cluster_sample_size} are required for sampling without replacement")
+                cluster_sample = cluster_data.sample(n=cluster_sample_size, replace=False, random_state=rng.randint(10000))
                 
                 # Random sample from entire dataset (excluding cluster column for sampling)
                 random_sample_size = sample_size - cluster_sample_size
