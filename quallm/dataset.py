@@ -40,6 +40,45 @@ class SampleString(str):
         return f"""Sample of {self.sample_size} of {self.dataset_size} observations:\n{'='*10}\n{super().__str__()}"""
 
 
+class ClusterSampleString(SampleString):
+    """
+    Extended SampleString for cluster-based samples that includes cluster metadata.
+    Follows the established pattern from SampleString with additional cluster-specific attributes.
+    """
+    def __new__(cls, content, sample_size, dataset_size, indices, random_state,
+                source_clusters, combination_type, cluster_stats):
+        return super().__new__(cls, content, sample_size, dataset_size, indices, random_state)
+
+    def __init__(self, content, sample_size, dataset_size, indices, random_state,
+                 source_clusters, combination_type, cluster_stats):
+        super().__init__(content, sample_size, dataset_size, indices, random_state)
+        self._source_clusters = source_clusters
+        self._combination_type = combination_type
+        self._cluster_stats = cluster_stats
+
+    @property
+    def source_clusters(self):
+        """List of cluster IDs that contributed to this sample."""
+        return self._source_clusters
+
+    @property 
+    def combination_type(self):
+        """Type of combination: 'individual', 'pair', 'cluster-random', 'random'."""
+        return self._combination_type
+
+    @property
+    def cluster_stats(self):
+        """Dict with cluster statistics: sizes, outlier counts, etc."""
+        return self._cluster_stats
+
+    def __str__(self):
+        cluster_desc = ", ".join(map(str, self.source_clusters))
+        return f"""Cluster sample ({self.combination_type}): clusters [{cluster_desc}]
+Sample of {self.sample_size} of {self.dataset_size} observations:
+{'='*10}
+{super(SampleString, self).__str__()}"""
+
+
 class Dataset(List[Dict[str, str]]):
     """
     A custom list-like class for managing data to be inserted into prompts.
@@ -230,6 +269,200 @@ class Dataset(List[Dict[str, str]]):
 
         # Create and return a new Dataset instance
         return cls(samples, data_args=["sample"])
+
+    @classmethod
+    def from_cluster_samples(cls,
+                            data: pd.DataFrame,
+                            n_per_combination: int = 3,
+                            sample_size: int = 5,
+                            min_cluster_size: int = 15,
+                            embedding_client: Optional['EmbeddingClient'] = None,
+                            random_state: Optional[int] = None,
+                            labels: Optional[Dict[str, str]] = None,
+                            separator: str = "-----") -> 'Dataset':
+        """Generate samples by clustering data and selecting from clusters in different ways.
+        
+        This method clusters your data based on semantic similarity, then creates samples
+        by selecting observations from single clusters, pairs of clusters, and mixed
+        cluster/random combinations. The goal is to create comparison sets that help 
+        identify what characterizes and/or distinguishes different subsets in your data.
+        
+        Process:
+        1. Embeds all text data to capture semantic meaning
+        2. Clusters embeddings to identify thematically similar groups
+        3. Creates four types of samples from these clusters:
+           - Individual: All observations from one cluster
+           - Pairs: Observations from two different clusters
+           - Mixed: One cluster combined with random observations
+           - Random: Pure random selection as baseline
+        
+        This systematic sampling is useful when you need to understand what differentiates
+        groups in your data, as viewing similar items together makes their shared features
+        apparent, while contrasting different groups highlights their distinctions.
+        
+        Args:
+            data: DataFrame to sample from (must contain text data)
+            n_per_combination: Number of samples per combination type (default=3)
+            sample_size: Observations per sample (default=5)
+            min_cluster_size: Minimum observations to form a cluster (default=15)
+            embedding_client: Optional embedding client (auto-created if None)
+            random_state: Random seed for reproducibility
+            labels: Optional column name mapping for display
+            separator: String to separate observations in output (default="-----")
+            
+        Returns:
+            Dataset of strategically constructed samples for comparative analysis.
+            Each sample contains `sample_size` observations from specified cluster combinations.
+            
+        Raises:
+            ValueError: If sample_size <= 0 or n_per_combination <= 0
+        """
+        # Parameter validation
+        if sample_size <= 0:
+            raise ValueError("sample_size must be positive")
+        if n_per_combination <= 0:
+            raise ValueError("n_per_combination must be positive")
+        # Allow min_cluster_size < sample_size in some cases (will use replacement sampling)
+        from quallm.utils.clustering_utils import get_cluster_assignments
+        from quallm.embedding_client import EmbeddingClient
+        
+        if embedding_client is None:
+            embedding_client = EmbeddingClient()
+        
+        # Handle edge case: dataset too small to cluster
+        if len(data) < 5:
+            # Create a simple random sample instead
+            sample_data = data.sample(n=min(sample_size, len(data)), replace=True, random_state=random_state)
+            sample_string = _create_cluster_sample_string(
+                sample_data, ['small_dataset'], 'random', len(data), labels, separator
+            )
+            return cls([{"sample": sample_string}], data_args=["sample"])
+        
+        # Get cluster assignments
+        cluster_labels, metadata = get_cluster_assignments(
+            data.iloc[:, 0], embedding_client, min_cluster_size=min_cluster_size,
+            random_state=random_state
+        )
+        
+        # Create DataFrame with cluster assignments
+        clustered_data = data.copy()
+        clustered_data['_cluster'] = cluster_labels
+        
+        # Handle edge case: all observations assigned to outliers
+        cluster_sizes = clustered_data['_cluster'].value_counts()
+        valid_clusters = cluster_sizes[cluster_sizes >= min_cluster_size].index.tolist()
+        
+        if not valid_clusters or (len(valid_clusters) == 1 and -1 in valid_clusters):
+            # All outliers or no valid clusters - treat as single cluster
+            sample_data = data.sample(n=min(sample_size, len(data)), replace=True, random_state=random_state)
+            sample_string = _create_cluster_sample_string(
+                sample_data, ['all_outliers'], 'random', len(data), labels, separator
+            )
+            return cls([{"sample": sample_string}], data_args=["sample"])
+        
+        # Generate samples with systematic coverage of cluster combinations
+        samples = cls._generate_cluster_samples(
+            clustered_data, valid_clusters, n_per_combination, 
+            sample_size, len(data), random_state, labels, separator
+        )
+        
+        return cls(samples, data_args=["sample"])
+
+    @classmethod
+    def _generate_cluster_samples(cls,
+                                 clustered_data: pd.DataFrame,
+                                 valid_clusters: List[int],
+                                 n_per_combination: int,
+                                 sample_size: int,
+                                 total_dataset_size: int,
+                                 random_state: Optional[int],
+                                 labels: Optional[Dict[str, str]],
+                                 separator: str) -> List[Dict[str, ClusterSampleString]]:
+        """Generate samples with systematic coverage of cluster combinations.
+        
+        Creates four types of samples:
+        - Individual cluster samples: Observations from a single cluster
+        - Cluster pair samples: Observations from two different clusters
+        - Cluster-random combinations: One cluster mixed with random observations
+        - Pure random samples: Random observations as baseline comparison
+        
+        Each combination type gets n_per_combination samples. When a cluster has fewer
+        observations than sample_size, sampling with replacement is used.
+        """
+        import itertools
+        
+        samples = []
+        rng = np.random.RandomState(random_state)
+        
+        # Individual cluster samples 
+        for cluster_id in valid_clusters:
+            for _ in range(n_per_combination):
+                cluster_data = clustered_data[clustered_data['_cluster'] == cluster_id]
+                # Handle clusters smaller than sample_size with replacement
+                replace_needed = len(cluster_data) < sample_size
+                sample_data = cluster_data.sample(n=sample_size, replace=replace_needed, random_state=rng.randint(10000))
+                # Randomize order of observations within sample
+                sample_data = sample_data.sample(frac=1.0, random_state=rng.randint(10000))
+                sample_string = _create_cluster_sample_string(
+                    sample_data, [cluster_id], 'individual', total_dataset_size, labels, separator
+                )
+                samples.append({"sample": sample_string})
+        
+        # Cluster pair samples
+        cluster_pairs = list(itertools.combinations(valid_clusters, 2))
+        for pair in cluster_pairs:
+            for _ in range(n_per_combination):
+                combined_data = []
+                for cluster_id in pair:
+                    cluster_data = clustered_data[clustered_data['_cluster'] == cluster_id]
+                    # Sample half the sample_size from each cluster (with balancing)
+                    cluster_sample_size = sample_size // 2
+                    if cluster_id == pair[1] and sample_size % 2 == 1:  # Give remainder to second cluster
+                        cluster_sample_size += 1
+                    
+                    replace_needed = len(cluster_data) < cluster_sample_size
+                    cluster_sample = cluster_data.sample(n=cluster_sample_size, replace=replace_needed, random_state=rng.randint(10000))
+                    combined_data.append(cluster_sample)
+                
+                # Combine and randomize order
+                sample_data = pd.concat(combined_data, ignore_index=False)
+                sample_data = sample_data.sample(frac=1.0, random_state=rng.randint(10000))
+                sample_string = _create_cluster_sample_string(
+                    sample_data, list(pair), 'pair', total_dataset_size, labels, separator
+                )
+                samples.append({"sample": sample_string})
+        
+        # Cluster-random combinations (one cluster + random observations)
+        for cluster_id in valid_clusters:
+            for _ in range(n_per_combination):
+                # Half from specific cluster, half random from entire dataset
+                cluster_data = clustered_data[clustered_data['_cluster'] == cluster_id]
+                cluster_sample_size = sample_size // 2
+                
+                replace_needed = len(cluster_data) < cluster_sample_size
+                cluster_sample = cluster_data.sample(n=cluster_sample_size, replace=replace_needed, random_state=rng.randint(10000))
+                
+                # Random sample from entire dataset (excluding cluster column for sampling)
+                random_sample_size = sample_size - cluster_sample_size
+                random_sample = clustered_data.sample(n=random_sample_size, replace=True, random_state=rng.randint(10000))
+                
+                # Combine and randomize order
+                sample_data = pd.concat([cluster_sample, random_sample], ignore_index=False)
+                sample_data = sample_data.sample(frac=1.0, random_state=rng.randint(10000))
+                sample_string = _create_cluster_sample_string(
+                    sample_data, [cluster_id, 'random'], 'cluster-random', total_dataset_size, labels, separator
+                )
+                samples.append({"sample": sample_string})
+        
+        # Pure random samples (baseline)
+        for _ in range(n_per_combination):
+            sample_data = clustered_data.sample(n=sample_size, replace=True, random_state=rng.randint(10000))
+            sample_string = _create_cluster_sample_string(
+                sample_data, ['random'], 'random', total_dataset_size, labels, separator
+            )
+            samples.append({"sample": sample_string})
+        
+        return samples
 
     @staticmethod
     def _combine_columns(sample: pd.DataFrame, separator: str) -> str:
@@ -427,3 +660,36 @@ class Dataset(List[Dict[str, str]]):
             observations.append("\n".join(obs_lines))
         
         return "\n".join(observations)
+
+
+def _create_cluster_sample_string(sample_data: pd.DataFrame,
+                                 source_clusters: List[Union[int, str]], 
+                                 combination_type: str,
+                                 total_dataset_size: int,
+                                 labels: Optional[Dict[str, str]],
+                                 separator: str) -> ClusterSampleString:
+    """Helper function to create ClusterSampleString instances."""
+    # Format sample content using established separator pattern
+    if labels:
+        display_data = sample_data.rename(columns=labels)
+    else:
+        display_data = sample_data.drop('_cluster', axis=1, errors='ignore')
+    
+    content = Dataset._combine_columns(display_data, separator)
+    
+    cluster_stats = {
+        'n_clusters_used': len([c for c in source_clusters if c != 'random']),
+        'combination_type': combination_type,
+        'cluster_sizes': {}  # Could be populated with actual cluster sizes
+    }
+    
+    return ClusterSampleString(
+        content=content,
+        sample_size=len(sample_data),
+        dataset_size=total_dataset_size,
+        indices=sample_data.index.tolist(),
+        random_state=None,  # Could track if needed
+        source_clusters=source_clusters,
+        combination_type=combination_type,
+        cluster_stats=cluster_stats
+    )
