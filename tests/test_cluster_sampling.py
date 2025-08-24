@@ -2,7 +2,6 @@ import pytest
 import pandas as pd
 import numpy as np
 from quallm.dataset import Dataset, ClusterSampleString, _create_cluster_sample_string
-from quallm.embedding_client import EmbeddingClient
 
 
 # ============= Shared Test Infrastructure =============
@@ -21,7 +20,7 @@ class ConfigurableMockEmbeddingClient:
         self.n_clusters = n_clusters
         self.separation = cluster_separation
         
-    def embed(self, texts, allow_na=True):
+    def embed(self, texts, allow_na=True):  # allow_na for API compatibility
         """Generate embeddings based on configured pattern."""
         n_texts = len(texts)
         
@@ -145,8 +144,8 @@ def test_sample_generation_combination_types(n_clusters, expected_types):
     dataset = Dataset.from_cluster_samples(
         data=data,
         n_per_combination=1,
-        sample_size=3,
-        min_cluster_size=5,
+        sample_size=2,
+        min_cluster_size=6,
         embedding_client=mock_client,
         random_state=42
     )
@@ -174,7 +173,7 @@ def test_edge_cases(small_dataset, edge_case, expected_behavior):
         data=data,
         n_per_combination=1,
         sample_size=2,
-        min_cluster_size=15 if edge_case == "all_outliers" else 5,
+        min_cluster_size=15 if edge_case == "all_outliers" else 6,
         embedding_client=mock_client,
         random_state=42
     )
@@ -195,7 +194,7 @@ def test_cluster_pair_generation():
     dataset = Dataset.from_cluster_samples(
         data=data,
         n_per_combination=2,
-        sample_size=4,
+        sample_size=2,
         min_cluster_size=6,
         embedding_client=mock_client,
         random_state=42
@@ -222,8 +221,8 @@ def test_imbalanced_clusters():
     dataset = Dataset.from_cluster_samples(
         data=data,
         n_per_combination=1,
-        sample_size=4,
-        min_cluster_size=5,
+        sample_size=2,
+        min_cluster_size=6,
         embedding_client=mock_client,
         random_state=42
     )
@@ -256,29 +255,10 @@ def test_parameter_validation(sample_size, n_per_combination):
 
 def test_comprehensive_integration():
     """Integration test covering the full feature with realistic data."""
-    # Create dataset with 3 clear thematic clusters
-    data = pd.DataFrame({
-        'text': [
-            # Animals (8 items)
-            'Dogs are loyal companions', 'Cats are independent pets',
-            'Birds sing in morning', 'Fish swim in oceans',
-            'Horses run in fields', 'Lions hunt in prides',
-            'Bears sleep in winter', 'Wolves howl at moon',
-            
-            # Technology (8 items)
-            'Computers process data fast', 'Software automates tasks',
-            'Internet connects people globally', 'AI learns from data',
-            'Robots help in factories', 'Smartphones are portable',
-            'Cloud stores data online', 'Networks transfer information',
-            
-            # Food (8 items)
-            'Pizza has many toppings', 'Salad is healthy meal',
-            'Chocolate tastes sweet', 'Coffee gives energy',
-            'Bread is staple food', 'Fruit provides vitamins',
-            'Vegetables are nutritious', 'Desserts are treats'
-        ],
-        'category': ['animals'] * 8 + ['tech'] * 8 + ['food'] * 8
-    })
+    # Load test data from file (48 rows: 16 animals, 16 technology, 16 food)
+    import os
+    test_data_path = os.path.join(os.path.dirname(__file__), 'test_data', 'cluster_sampling_test_data.csv')
+    data = pd.read_csv(test_data_path)
     
     mock_client = ConfigurableMockEmbeddingClient('balanced', n_clusters=3)
     
@@ -286,7 +266,7 @@ def test_comprehensive_integration():
         data=data,
         n_per_combination=2,
         sample_size=5,
-        min_cluster_size=6,
+        min_cluster_size=15,
         embedding_client=mock_client,
         labels={'text': 'Content', 'category': 'Theme'},
         separator='---',
@@ -307,62 +287,3 @@ def test_comprehensive_integration():
     # Verify counts (3 clusters)
     expected_total = (3 * 2) + (3 * 2) + (3 * 2) + 2  # individual + pairs + cluster-random + random
     assert len(dataset) == expected_total
-
-
-def test_small_cluster_with_replacement():
-    """Test that small clusters use sampling with replacement."""
-    # Create dataset where some clusters will be smaller than sample_size
-    data = pd.DataFrame({
-        'text': [
-            'Small A1', 'Small A2',  # Cluster of size 2
-            'Large B1', 'Large B2', 'Large B3', 'Large B4', 'Large B5', 'Large B6'
-        ]
-    })
-    
-    mock_client = ConfigurableMockEmbeddingClient('balanced', n_clusters=2)
-    
-    dataset = Dataset.from_cluster_samples(
-        data=data,
-        n_per_combination=1,
-        sample_size=4,  # Larger than first cluster
-        min_cluster_size=2,  # Allow small clusters
-        embedding_client=mock_client,
-        random_state=42
-    )
-    
-    # Should generate samples successfully using replacement
-    assert len(dataset) > 0
-    
-    # Check that samples are generated correctly
-    for item in dataset:
-        sample = item['sample']
-        # Individual cluster samples should still work with replacement
-        if sample.combination_type == 'individual':
-            # Should have sample_size items even if cluster is smaller
-            assert len(sample.indices) > 0  # At least some indices
-
-
-# Optional: Test with real embedding client if available
-def test_end_to_end_with_real_client():
-    """End-to-end test with real embedding client (skipped if not available)."""
-    data = create_test_dataframe(15, n_clusters=3)
-    
-    try:
-        dataset = Dataset.from_cluster_samples(
-            data=data,
-            n_per_combination=1,
-            sample_size=3,
-            min_cluster_size=4,
-            random_state=42
-        )
-        
-        # Basic validation
-        assert len(dataset) > 0
-        assert all('sample' in item for item in dataset)
-        
-        # Should have multiple combination types
-        combo_types = set(item['sample'].combination_type for item in dataset)
-        assert len(combo_types) >= 2
-        
-    except Exception as e:
-        pytest.skip(f"Embedding client not available: {e}")

@@ -305,6 +305,7 @@ class Dataset(List[Dict[str, str]]):
             n_per_combination: Number of samples per combination type (default=3)
             sample_size: Observations per sample (default=5)
             min_cluster_size: Minimum observations to form a cluster (default=15)
+                             Must be >= 3 * sample_size to ensure variety without replacement
             embedding_client: Optional embedding client (auto-created if None)
             random_state: Random seed for reproducibility
             labels: Optional column name mapping for display
@@ -315,14 +316,16 @@ class Dataset(List[Dict[str, str]]):
             Each sample contains `sample_size` observations from specified cluster combinations.
             
         Raises:
-            ValueError: If sample_size <= 0 or n_per_combination <= 0
+            ValueError: If sample_size <= 0, n_per_combination <= 0, or 
+                       min_cluster_size < 3 * sample_size
         """
         # Parameter validation
         if sample_size <= 0:
             raise ValueError("sample_size must be positive")
         if n_per_combination <= 0:
             raise ValueError("n_per_combination must be positive")
-        # Allow min_cluster_size < sample_size in some cases (will use replacement sampling)
+        if min_cluster_size < 3 * sample_size:
+            raise ValueError(f"min_cluster_size must be >= 3 * sample_size to ensure variety. Got min_cluster_size={min_cluster_size}, sample_size={sample_size}, but need at least {3 * sample_size}")
         from quallm.utils.clustering_utils import get_cluster_assignments
         from quallm.embedding_client import EmbeddingClient
         
