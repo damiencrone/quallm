@@ -13,7 +13,7 @@ def get_embeddings(texts: Union[str, List[str], pd.Series],
     return np.array(embeddings)
 
 def reduce_dimensions(embeddings: np.ndarray,
-                     n_components: int = 2,
+                     n_components: int = 5,
                      n_neighbors: int = 15,
                      min_dist: float = 0.1,
                      metric: str = 'euclidean',
