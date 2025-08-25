@@ -97,7 +97,7 @@ def create_test_dataframe(n_observations, n_clusters=3):
 @pytest.fixture
 def small_dataset():
     """Dataset too small for clustering."""
-    return pd.DataFrame({'text': ['First', 'Second', 'Third']})
+    return pd.DataFrame({'text': ['First', 'Second', 'Third', 'Fourth']})
 
 
 # ============= Tests =============
@@ -166,7 +166,7 @@ def test_edge_cases(small_dataset, edge_case, expected_behavior):
         data = small_dataset
         mock_client = ConfigurableMockEmbeddingClient('balanced')
     else:  # all_outliers
-        data = create_test_dataframe(6)
+        data = create_test_dataframe(10)  # Need more than 5 for UMAP with n_components=5
         mock_client = ConfigurableMockEmbeddingClient('scattered')
     
     dataset = Dataset.from_cluster_samples(

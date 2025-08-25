@@ -20,10 +20,24 @@ def sample_texts():
     return [
         "Apple is a fruit",
         "Orange is also a fruit", 
+        "Banana is a yellow fruit",
+        "Grapes are small fruits",
+        "Strawberry is a red fruit",
         "Car is a vehicle",
         "Truck is also a vehicle",
+        "Motorcycle is a two-wheeled vehicle",
+        "Bus is a large vehicle",
+        "Bicycle is a human-powered vehicle",
         "Pizza is food",
-        "Hamburger is food"
+        "Hamburger is food",
+        "Pasta is Italian food",
+        "Sushi is Japanese food",
+        "Tacos are Mexican food",
+        "Dog is an animal",
+        "Cat is a pet animal",
+        "Lion is a wild animal",
+        "Eagle is a bird",
+        "Shark is a sea creature"
     ]
 
 @pytest.fixture
@@ -108,9 +122,9 @@ def test_cluster_embeddings_scenarios(clustered_embeddings, scenario, min_cluste
 
 # Comprehensive pipeline test with multiple scenarios
 @pytest.mark.parametrize("text_count,min_cluster_size,clustering_kwargs", [
-    (6, 2, {}),                                          # Standard case
-    (5, 3, {}),                                          # Small dataset
-    (6, 2, {"metric": "euclidean", "alpha": 1.0}),     # Custom parameters
+    (20, 5, {}),                                          # Standard case
+    (15, 5, {}),                                          # Small dataset
+    (20, 5, {"metric": "euclidean", "alpha": 1.0}),     # Custom parameters
 ])
 def test_get_cluster_assignments_pipeline(embedding_client, sample_texts, text_count, min_cluster_size, clustering_kwargs):
     """Test the complete clustering pipeline with various configurations."""
@@ -130,7 +144,7 @@ def test_get_cluster_assignments_pipeline(embedding_client, sample_texts, text_c
     
     # Metadata validation
     assert set(metadata.keys()) == {'reduced_embeddings', 'n_clusters', 'n_outliers'}
-    assert metadata['reduced_embeddings'].shape == (text_count, 2)
+    assert metadata['reduced_embeddings'].shape == (text_count, 5)
     assert metadata['n_clusters'] >= 0
     assert metadata['n_outliers'] >= 0
     assert metadata['n_clusters'] + (1 if metadata['n_outliers'] > 0 else 0) == len(set(labels))
